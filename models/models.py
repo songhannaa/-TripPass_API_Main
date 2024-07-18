@@ -62,5 +62,6 @@ class joinRequests(Base):
     __tablename__ = 'joinRequests'
     requestId = Column(INT, primary_key=True, autoincrement=True)
     crewId = Column(String(36), nullable=False)
+    tripId = Column(String(50), nullable=False)
     userId = Column(String(36), nullable=False)
     status = Column(INT, nullable=False)
