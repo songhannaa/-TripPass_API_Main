@@ -1,10 +1,11 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
 from sqlalchemy.orm import Session
-from models.models import myTrips
+from models.models import myTrips, user
 from database import sqldb , OPENAI_API_KEY, WEATHER_API_KEY
 from utils.ImageGeneration import imageGeneration
 from utils.GetWeather import getWeather
 import base64
+import uuid
 
 router = APIRouter()
 
