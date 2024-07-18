@@ -19,8 +19,8 @@ app.add_middleware(
 async def health_check():
     return "OK"
 
-app.include_router(user.router, prefix="/user", tags=["user"])
-app.include_router(myTrip.router, prefix="/mytrip", tags=["mytrip"])
-app.include_router(tripPlan.router, prefix="/tripPlan", tags=["tripPlan"])
-app.include_router(crew.router, prefix="/crew", tags=["crew"])
-app.include_router(joinRequest.router, prefix="/joinRequest", tags=["joinRequest"])
+app.include_router(user.router, tags=["user"])
+app.include_router(myTrip.router, tags=["mytrip"])
+app.include_router(tripPlan.router, tags=["tripPlan"])
+app.include_router(crew.router, tags=["crew"])
+app.include_router(joinRequest.router, tags=["joinRequest"])
