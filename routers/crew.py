@@ -1,8 +1,9 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from models.models import crew, tripPlans
+from models.models import crew, tripPlans, myTrips
 from database import sqldb
+from sqlalchemy import and_
 import base64
 import uuid
 
