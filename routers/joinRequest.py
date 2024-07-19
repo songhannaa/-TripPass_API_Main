@@ -100,6 +100,7 @@ async def updateCrewTripMate(
                 crew_data.sincheongIn = ",".join(sincheongIn)
         session.commit()
 
+
         # status가 1인 경우 (수락 상태)
         if status == 1:
             # tripmate 필드에 userId 추가
@@ -113,7 +114,7 @@ async def updateCrewTripMate(
             tripId = join_request.tripId
 
             # tripPlans 테이블에서 tripId로 계획 찾기
-            trip_plans = session.query(tripPlans).filter(tripPlans.tripId == crew_data.tripId).first()
+            trip_plans = session.query(tripPlans).filter(tripPlans.planId == crew_data.planId).first()
             new_trip_plan = tripPlans(
                 planId=str(uuid.uuid4()),
                 userId=userId,
@@ -135,5 +136,39 @@ async def updateCrewTripMate(
     except Exception as e:
         session.rollback()
         return {"result code": 500, "response": str(e)}
+    finally:
+        session.close()
+
+@router.get("/getCrewSincheongIn", description="mySQL crew Table에서 crew sincheongIn 가져오기")
+async def getCrewSincheongIn(crewId: str, userId: str,
+session: Session = Depends(sqldb.sessionmaker)):
+    try:
+        query = session.query(crew)
+        query = query.filter(crew.crewId == crewId, crew.sincheongIn.isnot(None), crew.crewLeader == userId)
+        crew_data = query.first()
+        
+        if not crew_data:
+            return {"result code": 404, "response": "no sincheongIn data"}
+
+        sincheongIn_ids = crew_data.sincheongIn.split(",")
+        
+        sincheongIn_data = []
+        for user_id in sincheongIn_ids:
+            user_query = session.query(user).filter(user.userId == user_id)
+            user_data = user_query.first()
+            if user_data:
+                user_dict = {
+                    "userId": user_data.userId,
+                    "id": user_data.id,
+                    "nickname": user_data.nickname,
+                    "birthDate": user_data.birthDate,
+                    "sex": user_data.sex,
+                    "profileImage": base64.b64encode(user_data.profileImage).decode('utf-8') if user_data.profileImage else None,
+                    "socialProfileImage": user_data.socialProfileImage,
+                    "personality": user_data.personality
+                }
+                sincheongIn_data.append(user_dict)
+        
+        return {"result code": 200, "response": sincheongIn_data}
     finally:
         session.close()

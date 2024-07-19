@@ -56,6 +56,7 @@ class crew(Base):
     banner = Column(LargeBinary, nullable=True)
     tripmate = Column(String(255), nullable=True)
     sincheongIn = Column(String(255), nullable=True)
+    crewLeader = Column(String(36), nullable=False)
 
 
 class joinRequests(Base):
