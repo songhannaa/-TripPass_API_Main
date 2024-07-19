@@ -125,7 +125,7 @@ async def getMyCrewTable(
         session.close()
 
 @router.get('/getCrewCalc', description="mySQL crew Table 접근해서 정보 가져오기, mainTrip 입력 필수")
-async def getCrewTableCalc(mainTrip: str,
+async def getCrewTableCalc(mainTrip: str, userId: str,
 session: Session = Depends(sqldb.sessionmaker)):
     try:
         # mainTrip에 해당하는 여행 정보를 가져옴
@@ -156,7 +156,7 @@ session: Session = Depends(sqldb.sessionmaker)):
                 if plan.tripId == mainTrip:
                     continue
 
-                crew_query = session.query(crew).filter(crew.planId == plan.planId).first()
+                crew_query = session.query(crew).filter(crew.planId == plan.planId).filter(~crew.tripmate.contains(userId)).first()
                 
                 if crew_query:
                     # 추가 필터링: 동일한 나라와 도시인지 확인
