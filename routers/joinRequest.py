@@ -1,11 +1,12 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
 from sqlalchemy.orm import Session
-from models.models import joinRequests, crew ,user, tripPlans
+from models.models import joinRequests, crew, user, tripPlans
 from database import sqldb
 import base64
 import uuid
 
 router = APIRouter()
+
 
 @router.get('/getJoinRequests', description="mySQL joinRequests Table 접근해서 정보 가져오기, crewId는 선택사항")
 async def getJoinRequestsTable(userId: str = None,
@@ -14,9 +15,9 @@ session: Session = Depends(sqldb.sessionmaker)):
         if userId:
             crew_data = session.query(crew).filter(crew.tripmate.like(f"%{userId}%")).all()
             crew_ids = [c.crewId for c in crew_data]
-            join_requests = session.query(joinRequests).filter(joinRequests.crewId.in_(crew_ids), joinRequests.status == 0).all()
+            join_requests = session.query(joinRequests).filter(joinRequests.crewId.in_(crew_ids)).all()
         else:
-            join_requests = session.query(joinRequests).filter(joinRequests.status == 0).all()
+            join_requests = session.query(joinRequests).all()
 
         results = []
         for request in join_requests:
@@ -28,6 +29,7 @@ session: Session = Depends(sqldb.sessionmaker)):
                 "tripId": request.tripId,
                 "nickname": user_data.nickname,
                 "profileImage": base64.b64encode(user_data.profileImage).decode('utf-8') if user_data.profileImage else None,
+                "status": request.status
             }
             results.append(request_dict)
         return {"result code": 200, "response": results}
@@ -36,17 +38,17 @@ session: Session = Depends(sqldb.sessionmaker)):
 
 @router.post('/insertJoinRequests', description="mySQL joinRequests Table에 추가, requestId는 auto increment로 생성")
 async def insertJoinRequestsTable(
-    userId : str = Form(...),
-    tripId : str = Form(...),
-    crewId : str = Form(...),
+    userId: str = Form(...),
+    tripId: str = Form(...),
+    crewId: str = Form(...),
     session: Session = Depends(sqldb.sessionmaker)
 ):
     try:
         new_joinRequest = joinRequests(
-            userId=userId, 
+            userId=userId,
             tripId=tripId,
             crewId=crewId,
-            status = 0
+            status=0
         )
         query = session.query(crew)
         query = query.filter(crew.crewId == crewId)
@@ -61,6 +63,7 @@ async def insertJoinRequestsTable(
             crew_data.sincheongIn = str(sincheongIn) + "," + userId
         session.commit()
         session.refresh(new_joinRequest)
+
         return {"result code": 200, "response": crewId}
     finally:
         session.close()
@@ -100,7 +103,6 @@ async def updateCrewTripMate(
                 crew_data.sincheongIn = ",".join(sincheongIn)
         session.commit()
 
-
         # status가 1인 경우 (수락 상태)
         if status == 1:
             # tripmate 필드에 userId 추가
@@ -133,6 +135,24 @@ async def updateCrewTripMate(
             session.commit()
 
         return {"result code": 200, "response": "Operation successful"}
+    except Exception as e:
+        session.rollback()
+        return {"result code": 500, "response": str(e)}
+    finally:
+        session.close()
+
+@router.delete('/deleteJoinRequest', description="mySQL joinRequests Table에서 특정 요청 삭제")
+async def deleteJoinRequest(crewId: str, userId: str, session: Session = Depends(sqldb.sessionmaker)):
+    try:
+        join_request = session.query(joinRequests).filter(joinRequests.crewId == crewId, joinRequests.userId == userId).first()
+        
+        if not join_request:
+            return {"result code": 404, "response": "Join request not found"}
+        
+        session.delete(join_request)
+        session.commit()
+        
+        return {"result code": 200, "response": "Join request deleted successfully"}
     except Exception as e:
         session.rollback()
         return {"result code": 500, "response": str(e)}

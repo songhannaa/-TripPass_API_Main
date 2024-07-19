@@ -65,4 +65,4 @@ class joinRequests(Base):
     crewId = Column(String(36), nullable=False)
     tripId = Column(String(50), nullable=False)
     userId = Column(String(36), nullable=False)
-    status = Column(INT, nullable=False)
+    status = Column(INT, nullable=False)     
