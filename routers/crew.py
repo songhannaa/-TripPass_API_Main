@@ -226,7 +226,8 @@ async def insertCrewTable(
             note=note,
             numOfMate=numOfMate,
             banner=image_data,
-            tripmate=userId
+            tripmate=userId,
+            crewLeader=userId
         )
         
         session.add(new_crew)
@@ -259,9 +260,13 @@ session: Session = Depends(sqldb.sessionmaker)):
         if not crew_data:
             return {"result code": 404, "response": "Crew not found"}
 
+        crews = crew_data.tripmate.split(",")
         # 크루를 생성한 사용자인지 확인합니다
-        if crew_data.tripmate != userId:
+        if crews[0] != userId:
             return {"result code": 403, "response": "You are not authorized to delete this crew"}
+        
+        if len(crews) > 1 :
+            return {"result code": 402, "response": "This Crew Already Has A Mate"}
 
         # 크루를 삭제합니다
         session.delete(crew_data)
