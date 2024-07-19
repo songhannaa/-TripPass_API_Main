@@ -7,6 +7,7 @@ import uuid
 
 router = APIRouter()
 
+
 @router.get('/getJoinRequests', description="mySQL joinRequests Table 접근해서 정보 가져오기, crewId는 선택사항")
 async def getJoinRequestsTable(userId: str = None,
 session: Session = Depends(sqldb.sessionmaker)):
