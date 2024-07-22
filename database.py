@@ -26,8 +26,13 @@ KAKAO_REDIRECT_URI = get_secret("KAKAO_REDIRECT_URI")
 OPENAI_API_KEY = get_secret("OPENAI_API_KEY")
 WEATHER_API_KEY = get_secret("WEATHER_API_KEY")
 SERP_API_KEY = get_secret("SERP_API_KEY")
+MongoDB_Hostname = get_secret("MongoDB_Hostname")
+MongoDB_Username = get_secret("MongoDB_Username")
+MongoDB_Password = get_secret("MongoDB_Password")
 
 DB_URL = f'mysql+pymysql://{SQLUSERNAME}:{SQLPASSWORD}@{HOSTNAME}:{PORT}/{SQLDBNAME}'
+
+
 
 class db_conn:
     def __init__(self):

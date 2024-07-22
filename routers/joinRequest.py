@@ -1,42 +1,45 @@
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
+from fastapi import FastAPI, Form, Depends, APIRouter
 from sqlalchemy.orm import Session
-from models.models import joinRequests, crew, user
+from models.models import joinRequests, crew, user, tripPlans
 from database import sqldb
 import base64
 import uuid
 
 router = APIRouter()
 
-@router.get('/getJoinRequests', description="mySQL joinRequests Table 접근해서 정보 가져오기, crewId는 선택사항")
+@router.get('/getJoinRequests', description="mySQL joinRequests Table 접근해서 정보 가져오기, userId는 필수")
 async def getJoinRequestsTable(userId: str = None, session: Session = Depends(sqldb.sessionmaker)):
     try:
         if userId:
-            crew_data = session.query(crew).filter(
-                (crew.tripmate.like(f"%{userId}%")) |
-                (crew.sincheongIn.like(f"%{userId}%"))
-            ).all()
-            crew_ids = [c.crewId for c in crew_data]
-            join_requests = session.query(joinRequests).filter(joinRequests.crewId.in_(crew_ids)).all()
+            query = session.query(joinRequests).filter(
+                (joinRequests.userId == userId) | 
+                (joinRequests.crewId.in_(
+                    session.query(crew.crewId).filter(crew.crewLeader == userId)
+                ))
+            )
         else:
-            join_requests = session.query(joinRequests).all()
+            return {"result code": 404, "response": "User not found"}
 
+        joinRequest_data = query.all()
         results = []
-        for request in join_requests:
-            user_data = session.query(user).filter(user.userId == request.userId).first()
-            crew_data = session.query(crew).filter(crew.crewId == request.crewId).first()
-            request_dict = {
-                "requestId": request.requestId,
-                "crewId": request.crewId,
-                "userId": request.userId,
-                "tripId": request.tripId,
-                "nickname": user_data.nickname,
-                "profileImage": base64.b64encode(user_data.profileImage).decode('utf-8') if user_data.profileImage else None,
-                "status": request.status,
-                "crewTitle": crew_data.title,
-                "crewLeader": crew_data.crewLeader
+        for joinRequest in joinRequest_data:
+            joinRequest_dict = {
+                "requestId": joinRequest.requestId,
+                "crewId": joinRequest.crewId,
+                "status": joinRequest.status,
+                "alert": joinRequest.alert,
+                "userId": joinRequest.userId
             }
-            results.append(request_dict)
+
+            if joinRequest.crewId:
+                crew_data = session.query(crew).filter(crew.crewId == joinRequest.crewId).first()
+                if crew_data:
+                    joinRequest_dict["crewTitle"] = crew_data.title
+                    joinRequest_dict["crewLeader"] = crew_data.crewLeader
+            
+            results.append(joinRequest_dict)
         return {"result code": 200, "response": results}
+        
     finally:
         session.close()
 
@@ -59,7 +62,8 @@ async def insertJoinRequestsTable(
             userId=userId,
             tripId=tripId,
             crewId=crewId,
-            status=0
+            status=0,
+            alert=0  # 새로운 요청의 알림 상태는 미확인
         )
         session.add(new_joinRequest)
 
@@ -98,6 +102,7 @@ async def updateCrewTripMate(
             return {"result code": 404, "response": "Join request not found"}
 
         join_request.status = status
+        join_request.alert = 0  # 알림 미확인 상태로 설정
         session.commit()
 
         crew_data = session.query(crew).filter(crew.crewId == crewId).first()
@@ -107,14 +112,41 @@ async def updateCrewTripMate(
         sincheongIn = crew_data.sincheongIn.split(",") if crew_data.sincheongIn else []
         if userId in sincheongIn:
             sincheongIn.remove(userId)
-            crew_data.sincheongIn = ",".join(sincheongIn) if sincheongIn else None
+            if not sincheongIn or sincheongIn == [""]:
+                crew_data.sincheongIn = None
+            else:
+                crew_data.sincheongIn = ",".join(sincheongIn)
         session.commit()
-
+        print(status)
+    
         if status == 1:
             tripmates = crew_data.tripmate.split(",") if crew_data.tripmate else []
             if (userId not in tripmates) and (len(tripmates) < 4):
                 tripmates.append(userId)
                 crew_data.tripmate = ",".join(tripmates)
+            session.commit()
+
+            # joinRequests 테이블에서 tripId 가져오기
+            tripId = join_request.tripId
+
+            # tripPlans 테이블에서 tripId로 계획 찾기
+            trip_plans = session.query(tripPlans).filter(tripPlans.planId == crew_data.planId).first()
+            print(trip_plans)
+            new_trip_plan = tripPlans(
+                planId=str(uuid.uuid4()),
+                userId=userId,
+                tripId=tripId,
+                title=trip_plans.title,
+                date=trip_plans.date,
+                time=trip_plans.time,
+                place=trip_plans.place,
+                address=trip_plans.address,
+                latitude=trip_plans.latitude,
+                longitude=trip_plans.longitude,
+                description=trip_plans.description,
+                crewId=trip_plans.crewId
+            )
+            session.add(new_trip_plan)
             session.commit()
 
         return {"result code": 200, "response": "Operation successful"}
@@ -125,9 +157,9 @@ async def updateCrewTripMate(
         session.close()
 
 @router.delete('/deleteJoinRequest', description="mySQL joinRequests Table에서 특정 요청 삭제")
-async def deleteJoinRequest(crewId: str, userId: str, session: Session = Depends(sqldb.sessionmaker)):
+async def deleteJoinRequest(requestId: int, session: Session = Depends(sqldb.sessionmaker)):
     try:
-        join_request = session.query(joinRequests).filter(joinRequests.crewId == crewId, joinRequests.userId == userId).first()
+        join_request = session.query(joinRequests).filter(joinRequests.requestId == requestId).first()
         
         if not join_request:
             return {"result code": 404, "response": "Join request not found"}
@@ -178,7 +210,7 @@ async def getCrewSincheongIn(crewId: str, userId: str, session: Session = Depend
 @router.post('/updateNotificationStatus', description="mySQL joinRequests Table에서 특정 요청 상태 업데이트")
 async def updateNotificationStatus(
     requestId: int = Form(...),
-    status: int = Form(...),
+    alert: int = Form(...),
     session: Session = Depends(sqldb.sessionmaker)
 ):
     try:
@@ -187,10 +219,15 @@ async def updateNotificationStatus(
         if not join_request:
             return {"result code": 404, "response": "Join request not found"}
         
-        join_request.status = status
+        join_request.alert = alert
         session.commit()
+
+        # 만약 알림이 거절된 요청이라면, joinRequests 테이블에서 해당 요청 삭제
+        if alert == 1 and join_request.status == 2:
+            session.delete(join_request)
+            session.commit()
         
-        return {"result code": 200, "response": "Join request status updated successfully"}
+        return {"result code": 200, "response": "Join request alert status updated successfully"}
     except Exception as e:
         session.rollback()
         return {"result code": 500, "response": str(e)}
