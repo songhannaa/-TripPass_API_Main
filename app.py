@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import user, myTrip, tripPlan, crew, joinRequest
+from routers import user, myTrip, tripPlan, crew, joinRequest, chat
 
 app = FastAPI()
 
@@ -24,3 +24,4 @@ app.include_router(myTrip.router, tags=["mytrip"])
 app.include_router(tripPlan.router, tags=["tripPlan"])
 app.include_router(crew.router, tags=["crew"])
 app.include_router(joinRequest.router, tags=["joinRequest"])
+app.include_router(chat.router, tags=["chat"])
