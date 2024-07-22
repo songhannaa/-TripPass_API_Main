@@ -66,3 +66,4 @@ class joinRequests(Base):
     tripId = Column(String(50), nullable=False)
     userId = Column(String(36), nullable=False)
     status = Column(INT, nullable=False)     
+    alert = Column(INT, nullable=False)
