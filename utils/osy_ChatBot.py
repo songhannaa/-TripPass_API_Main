@@ -2,10 +2,12 @@ import os
 import json
 from serpapi import GoogleSearch
 import deepl
+import openai
 
 # BASE_DIR 설정을 수정하여 secret.json 파일 경로가 정확한지 확인
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 secret_file = os.path.join(BASE_DIR, '../secret.json')
+serp_data = []
 
 # secret.json 파일에서 API 키를 읽어옴
 with open(secret_file) as f:
@@ -102,7 +104,7 @@ def format_response(data, name, location, start_index=0, num_results=5):
 """
     return response, end_index
 
-def main():
+def get_serp(prompt):
     # 미리 지정된 사용자 이름과 위치
     user_name = "NARUTO"
     location = "Barcelona"
@@ -134,5 +136,26 @@ def main():
     else:
         print("데이터를 가져오는 데 실패했습니다. 다시 시도해주세요.")
 
-if __name__ == "__main__":
-    main()
+def chatIntent(prompt):
+    intents = ["여행 일정을 만들어줘", "여행 일정에 추가해줘", "여행 일정을 수정, 삭제할래", "여행 장소를 찾을래", "다른 추천 장소도 보여줘"]
+    
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that classifies user intents."},
+            {"role": "user", "content": f"Classify the intent of the following sentence: '{prompt}'. The possible intents are: {', '.join(intents)}."}
+        ],
+        max_tokens=150
+    )
+
+    return response.choices[0].message['content'].strip()
+
+while(True):
+    prompt = input("사용자 입력 (종료하려면 'exit' 입력): ")
+    if prompt.lower() == 'exit':
+        break
+    intent = chatIntent(prompt)
+    print(intent)
+    if intent == '여행 장소를 찾을래':
+        get_serp(prompt)
+    elif intent == '다른 추천 장소도 보여줘':
