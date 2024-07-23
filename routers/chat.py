@@ -20,8 +20,8 @@ mongodb_url = f'mongodb://{MongoDB_Username}:{MongoDB_Password}@{MongoDB_Hostnam
 client = MongoClient(mongodb_url)
 db = client['TripPass']
 
-collection=db['ChatData']
-placeCollcetion=db['SavePlace']
+ChatData_collection=db['ChatData']
+SavePlace_collection=db['SavePlace']
 
 
 class QuestionRequest(BaseModel):
@@ -40,7 +40,7 @@ def convert_objectid_to_str(doc):
 async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
     collection = db['ChatData']
     try:
-        chat_log = collection.find_one({"userId": userId, "tripId": tripId})
+        chat_log = ChatData_collection.find_one({"userId": userId, "tripId": tripId})
         if chat_log:
             response_data = convert_objectid_to_str(chat_log)
             conversation = response_data.get("conversation", [])
@@ -64,7 +64,7 @@ async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
     
     try:
         # userId와 tripId가 있는지 확인하고 업데이트 또는 삽입
-        result = collection.update_one(
+        result = ChatData_collection.update_one(
             {"userId": request.userId, "tripId": request.tripId},
             {
                 "$push": {"conversation": chat_log},
@@ -84,6 +84,21 @@ async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
         response_message = "Chat log updated successfully"
 
     return {"result code": 200, "response": response_message}
+
+
+
+@router.get(path='/getSavePlace', description="선택한 장소 가져오기")
+async def getSavedPlaces(userId: str = Query(...), tripId: str = Query(...)):
+    try:
+        document = SavePlace_collection.find_one({"userId": userId, "tripId": tripId})
+        response_data = document.get('placeData', [])
+        if document:
+            return {"result code": 200, "response": response_data}
+        else:
+            return {"result code": 404, "response": "Document not found"}
+    except Exception as e:
+        return {"result code": 400, "response": f"Error: {str(e)}"}
+    
 
 @router.post(path='/updateTripPlan', description="여행 계획 수정")
 async def updateTripPlan(
@@ -153,4 +168,5 @@ async def searchPlace(request: QuestionRequest):
             return {"result_code": 404, "message": "No results found."}
     except Exception as e:
         return {"result_code": 400, "message": f"Error: {str(e)}"}
+
 

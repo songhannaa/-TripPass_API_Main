@@ -32,8 +32,6 @@ MongoDB_Password = get_secret("MongoDB_Password")
 
 DB_URL = f'mysql+pymysql://{SQLUSERNAME}:{SQLPASSWORD}@{HOSTNAME}:{PORT}/{SQLDBNAME}'
 
-
-
 class db_conn:
     def __init__(self):
         self.engine = create_engine(DB_URL, pool_recycle=500)
@@ -48,4 +46,6 @@ class db_conn:
         return conn
 
 sqldb = db_conn()
+
+
 
