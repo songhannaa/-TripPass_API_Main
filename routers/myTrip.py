@@ -1,6 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
 from sqlalchemy.orm import Session
-from models.models import myTrips, user
+from models.models import myTrips, user, crew, tripPlans
 from database import sqldb , OPENAI_API_KEY, WEATHER_API_KEY
 from utils.ImageGeneration import imageGeneration
 from utils.GetWeather import getWeather
