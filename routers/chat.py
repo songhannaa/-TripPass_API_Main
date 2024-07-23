@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 from database import MongoDB_Hostname, MongoDB_Username, MongoDB_Password
 import os
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Query
 import base64
 from pymongo import MongoClient
 
@@ -21,33 +21,52 @@ class QuestionRequest(BaseModel):
     sender: str
     message: str
 
+# ObjectId를 문자열로 변환하는 헬퍼 함수
+def convert_objectid_to_str(doc):
+    if '_id' in doc:
+        doc['_id'] = str(doc['_id'])
+    return doc
 
+@router.get(path='/getChatMessages', description="채팅 로그 가져오기")
+async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
+    try:
+        chat_log = collection.find_one({"userId": userId, "tripId": tripId})
+        if chat_log:
+            response_data = convert_objectid_to_str(chat_log)
+            return {"result_code": 200, "messages": response_data.get("conversation", [])}
+        else:
+            return {"result_code": 404, "messages": []}
+    except Exception as e:
+        return {"result_code": 400, "messages": f"Error: {str(e)}"}
 
-@router.get(
-    path='/getChat', description="채팅 로그"
-)
-async def getChat():
-    # MongoDB에서 데이터 조회
-    answer = list(collection.find())
-    # ObjectId를 문자열로 변환하여 JSON 직렬화
-    return json.loads(json.dumps({"result code": 200, "response": answer}))
-
-@router.post(
-    path='/insertChat', description="채팅 로그 저장"
-)
-async def insertChat(request: QuestionRequest):
+@router.post(path='/saveChatMessage', description="채팅 로그 저장")
+async def saveChatMessage(request: QuestionRequest):
     # 채팅 로그 생성
     chat_log = {
-        "userId": request.userId,
-        "tripId": request.tripId,
+        "timestamp": datetime.utcnow(),
         "sender": request.sender,
-        "message": request.message,
-        "timestamp": datetime.utcnow()
+        "message": request.message
     }
     
     try:
-        collection.insert_one(chat_log)
+        # userId와 tripId가 있는지 확인하고 업데이트 또는 삽입
+        result = collection.update_one(
+            {"userId": request.userId, "tripId": request.tripId},
+            {
+                "$push": {"conversation": chat_log},
+                "$setOnInsert": {
+                    "userId": request.userId,
+                    "tripId": request.tripId
+                }
+            },
+            upsert=True
+        )
     except Exception as e:
         return {"result code": 400, "response": f"Error: {str(e)}"}
 
-    return {"result code": 200, "response": "Chat log updated successfully"}
+    if result.upserted_id is not None:
+        response_message = "New chat log created successfully"
+    else:
+        response_message = "Chat log updated successfully"
+
+    return {"result code": 200, "response": response_message}
