@@ -2,19 +2,27 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 import json
-from database import MongoDB_Hostname, MongoDB_Username, MongoDB_Password
+from database import sqldb
+from database import MongoDB_Hostname, MongoDB_Username, MongoDB_Password, SERP_API_KEY
 import os
-from fastapi import FastAPI, APIRouter, Query
+from fastapi import FastAPI, APIRouter, Query, HTTPException, Depends, Form
 import base64
 from pymongo import MongoClient
+from models.models import tripPlans
+import uuid
+from utils.SerpSearch import queryConvert, serpPlace, parseSerpData
+
 
 router = APIRouter()
 
+# Mongo 연결 설정
 mongodb_url = f'mongodb://{MongoDB_Username}:{MongoDB_Password}@{MongoDB_Hostname}:27017/'
 client = MongoClient(mongodb_url)
 db = client['TripPass']
+
 ChatData_collection=db['ChatData']
 SavePlace_collection=db['SavePlace']
+
 
 class QuestionRequest(BaseModel):
     userId: str
@@ -30,23 +38,28 @@ def convert_objectid_to_str(doc):
 
 @router.get(path='/getChatMessages', description="채팅 로그 가져오기")
 async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
+    collection = db['ChatData']
     try:
         chat_log = ChatData_collection.find_one({"userId": userId, "tripId": tripId})
         if chat_log:
             response_data = convert_objectid_to_str(chat_log)
-            return {"result_code": 200, "messages": response_data.get("conversation", [])}
+            conversation = response_data.get("conversation", [])
+            return {"result_code": 200, "messages": conversation}
         else:
             return {"result_code": 404, "messages": []}
     except Exception as e:
         return {"result_code": 400, "messages": f"Error: {str(e)}"}
 
 @router.post(path='/saveChatMessage', description="채팅 로그 저장")
-async def saveChatMessage(request: QuestionRequest):
+async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
+    collection = db['ChatData']
+    
     # 채팅 로그 생성
     chat_log = {
         "timestamp": datetime.utcnow(),
         "sender": request.sender,
-        "message": request.message
+        "message": request.message,
+        "isSerp": isSerp
     }
     
     try:
@@ -73,6 +86,7 @@ async def saveChatMessage(request: QuestionRequest):
     return {"result code": 200, "response": response_message}
 
 
+
 @router.get(path='/getSavePlace', description="선택한 장소 가져오기")
 async def getSavedPlaces(userId: str = Query(...), tripId: str = Query(...)):
     try:
@@ -85,3 +99,74 @@ async def getSavedPlaces(userId: str = Query(...), tripId: str = Query(...)):
     except Exception as e:
         return {"result code": 400, "response": f"Error: {str(e)}"}
     
+
+@router.post(path='/updateTripPlan', description="여행 계획 수정")
+async def updateTripPlan(
+    userId: str = Form(...),
+    tripId: str = Form(...),
+    date: str = Form(...),
+    title: str = Form(...),
+    new_time: str = Form(...),
+    session: Session = Depends(SessionLocal)
+):
+    try:
+        # 사용자와 여행 ID에 따른 모든 여행 정보 가져오기
+        plans = session.query(tripPlans).filter_by(userId=userId, tripId=tripId).all()
+        
+        if not plans:
+            raise HTTPException(status_code=404, detail="No data found for this user and trip.")
+        
+        # 날짜와 제목이 일치하는 계획 찾기
+        updated = False
+        for plan in plans:
+            if plan.date == date and plan.title == title:
+                # 변경할 시간이 이미 존재하면 불가능
+                if any(p.time == new_time for p in plans):
+                    raise HTTPException(status_code=400, detail="The new time already exists in the schedule.")
+                
+                # crewId가 있을 경우 변경 불가
+                if plan.crewId:
+                    raise HTTPException(status_code=403, detail="Cannot modify plan with crewId.")
+                
+                # 시간 업데이트
+                plan.time = new_time
+                session.commit()
+                updated = True
+                break
+        
+        if not updated:
+            raise HTTPException(status_code=404, detail="No matching plan found to update.")
+
+        return {"result code": 200, "response": "Plan updated successfully"}
+    
+    except Exception as e:
+        session.rollback()
+        return {"result code": 400, "response": f"Error: {str(e)}"}
+    
+    finally:
+        session.close()
+
+
+@router.post(path='/searchPlace', description="장소 검색 및 저장")
+async def searchPlace(request: QuestionRequest):
+    try:
+        # 사용자 입력을 받아서 SerpAPI 쿼리로 변환
+        query = queryConvert(request.message)
+        
+        # SerpAPI를 이용해 장소 검색
+        place_data = serpPlace(query, SERP_API_KEY, request.userId, request.tripId)
+        
+        # 검색 결과가 있으면 MongoDB에 저장
+        if place_data:
+            bot_message = "\n".join([
+                f"{idx + 1}. {place['title']}\n별점: {place['rating']}\n주소: {place['address']}\n설명: {place['description']}\n"
+                for idx, place in enumerate(place_data)
+            ])
+            await saveChatMessage(QuestionRequest(userId=request.userId, tripId=request.tripId, sender='bot', message=bot_message), isSerp=True)
+            return {"result_code": 200, "places": place_data}
+        else:
+            return {"result_code": 404, "message": "No results found."}
+    except Exception as e:
+        return {"result_code": 400, "message": f"Error: {str(e)}"}
+
+
