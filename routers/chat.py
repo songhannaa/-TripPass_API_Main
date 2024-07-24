@@ -1,28 +1,21 @@
+from fastapi import FastAPI, APIRouter, Query, HTTPException, Depends, Form
+from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from models.models import *
 import json
-from database import sqldb
-from database import MongoDB_Hostname, MongoDB_Username, MongoDB_Password, SERP_API_KEY
-import os
-from fastapi import FastAPI, APIRouter, Query, HTTPException, Depends, Form
+from database import sqldb , db
 import base64
-from pymongo import MongoClient
-from models.models import tripPlans
 import uuid
 from utils.SerpSearch import queryConvert, serpPlace, parseSerpData
 
 
 router = APIRouter()
 
-# Mongo 연결 설정
-mongodb_url = f'mongodb://{MongoDB_Username}:{MongoDB_Password}@{MongoDB_Hostname}:27017/'
-client = MongoClient(mongodb_url)
-db = client['TripPass']
-
+# mongodb collection
 ChatData_collection=db['ChatData']
 SavePlace_collection=db['SavePlace']
-
 
 class QuestionRequest(BaseModel):
     userId: str
@@ -38,7 +31,6 @@ def convert_objectid_to_str(doc):
 
 @router.get(path='/getChatMessages', description="채팅 로그 가져오기")
 async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
-    collection = db['ChatData']
     try:
         chat_log = ChatData_collection.find_one({"userId": userId, "tripId": tripId})
         if chat_log:
@@ -52,7 +44,6 @@ async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
 
 @router.post(path='/saveChatMessage', description="채팅 로그 저장")
 async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
-    collection = db['ChatData']
     
     # 채팅 로그 생성
     chat_log = {
@@ -107,7 +98,7 @@ async def updateTripPlan(
     date: str = Form(...),
     title: str = Form(...),
     new_time: str = Form(...),
-    session: Session = Depends(SessionLocal)
+    session: Session = Depends(sqldb.sessionmaker)
 ):
     try:
         # 사용자와 여행 ID에 따른 모든 여행 정보 가져오기
