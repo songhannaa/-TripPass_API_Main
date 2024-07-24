@@ -2,6 +2,7 @@ import os
 import json
 from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
+from pymongo import MongoClient
 
 BASE_DIR = os.path.dirname(os.path.relpath("./"))
 secret_file = os.path.join(BASE_DIR, 'secret.json')
@@ -46,6 +47,11 @@ class db_conn:
         return conn
 
 sqldb = db_conn()
+
+# Mongo 연결 설정
+mongodb_url = f'mongodb://{MongoDB_Username}:{MongoDB_Password}@{MongoDB_Hostname}:27017/'
+client = MongoClient(mongodb_url)
+db = client['TripPass']
 
 
 
