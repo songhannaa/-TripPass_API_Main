@@ -52,6 +52,3 @@ sqldb = db_conn()
 mongodb_url = f'mongodb://{MongoDB_Username}:{MongoDB_Password}@{MongoDB_Hostname}:27017/'
 client = MongoClient(mongodb_url)
 db = client['TripPass']
-
-
-
