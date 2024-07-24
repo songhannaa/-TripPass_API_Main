@@ -208,7 +208,6 @@ def createSqlQuerys(userId, tripId, data, startdate, enddate):
 
     return response.choices[0].message['content'].strip()
 
-# 예시 실행
 while(True):
     data = {}
     prompt = input("사용자 입력 (종료하려면 'exit' 입력): ")
