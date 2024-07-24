@@ -23,6 +23,47 @@ SERP_API_KEY = get_secret("SERP_API_KEY")
 OPENAI_API_KEY = get_secret("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
+def call_openai_function(query: str):
+    response = openai.ChatCompletion.create(
+        model="gpt-4-0613",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that provides travel recommendations."},
+            {"role": "user", "content": query}
+        ],
+        functions=[
+            {
+                "name": "search_places",
+                "description": "Search for various types of places based on user query",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query for finding places"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "just_chat",
+                "description": "Respond to general questions and provide information",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The user's general query"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        ],
+        function_call="auto"
+    )
+    return response
+
 def search_places(query: str):
     # Google Search API 호출을 위한 로직
     params = {
@@ -38,7 +79,7 @@ def search_places(query: str):
 
 def parseSerpData(data):
     if 'local_results' not in data:
-        return "No results found."
+        return []
     
     translator = GoogleTranslator(source='en', target='ko')
     parsed_results = []
@@ -85,49 +126,8 @@ def just_chat(query: str):
     )
     return response.choices[0].message["content"]
 
-def call_openai_function(query: str):
-    response = openai.ChatCompletion.create(
-        model="gpt-4-0613",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that provides travel recommendations."},
-            {"role": "user", "content": query}
-        ],
-        functions=[
-            {
-                "name": "search_places",
-                "description": "Search for various types of places based on user query",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query for finding places"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
-                "name": "just_chat",
-                "description": "Respond to general questions and provide information",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The user's general query"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        ],
-        function_call="auto"
-    )
-    return response
-
 # 사용 예제
-query = "뉴욕에서 맛있는 피자집 추천해줘."
+query = "안녕"
 response = call_openai_function(query)
 
 try:
