@@ -5,7 +5,7 @@ from typing import Optional
 from datetime import datetime
 from models.models import *
 import json
-from database import sqldb , db
+from database import sqldb , db , SERP_API_KEY
 import base64
 import uuid
 from utils.SerpSearch import queryConvert, serpPlace, parseSerpData
