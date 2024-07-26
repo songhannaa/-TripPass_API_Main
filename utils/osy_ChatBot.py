@@ -6,7 +6,6 @@ import deepl
 import os
 import re
 import uuid
-import google.generativeai as genai
 
 # BASE_DIR 설정을 수정하여 secret.json 파일 경로가 정확한지 확인
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,7 +34,6 @@ MYSQL_PASSWORD = get_secret("MYSQL_PASSWORD")
 MYSQL_DB_NAME = get_secret("MYSQL_DB_NAME")
 HOSTNAME = get_secret("MYSQL_HOST")
 
-GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 
 mongodb_url = f'mongodb://{MongoDB_Username}:{MongoDB_Password}@{MongoDB_Hostname}:27017/'
 client = MongoClient(mongodb_url)
