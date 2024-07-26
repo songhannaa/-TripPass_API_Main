@@ -9,7 +9,6 @@ from database import sqldb , db , SERP_API_KEY
 import base64
 import uuid
 from utils.SerpSearch import queryConvert, serpPlace, parseSerpData
-from utils.function import *
 
 
 router = APIRouter()
@@ -162,30 +161,3 @@ async def searchPlace(request: QuestionRequest):
         return {"result_code": 400, "message": f"Error: {str(e)}"}
 
 
-@router.post(path='/callOpenAIFunction', description="OpenAI 함수 호출")
-async def call_openai_function_endpoint(request: QuestionRequest):
-    try:
-        # OpenAI 함수를 호출하고 응답 받기
-        response = call_openai_function(request.message)
-
-        try:
-            function_call = response.choices[0].message["function_call"]
-            if function_call["name"] == "search_places":
-                args = json.loads(function_call["arguments"])
-                search_query = args["query"]
-                result = search_places(search_query, request.userId, request.tripId)
-            elif function_call["name"] == "just_chat":
-                args = json.loads(function_call["arguments"])
-                result = just_chat(args["query"])
-            elif function_call["name"] == "save_place":
-                args = json.loads(function_call["arguments"])
-                result = extractNumbers(args["query"], request.userId, request.tripId)
-            elif function_call["name"] == "save_plan":
-                args = json.loads(function_call["arguments"])
-                result = savePlans(request.userId, request.tripId)
-        except KeyError:
-            result = response.choices[0].message["content"]
-
-        return {"result_code": 200, "response": result}
-    except Exception as e:
-        return {"result_code": 400, "message": f"Error: {str(e)}"}

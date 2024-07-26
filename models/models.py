@@ -34,7 +34,7 @@ class tripPlans(Base):
     planId = Column(String(36), primary_key=True)
     userId = Column(String(36), nullable=False)
     tripId = Column(String(36), nullable=False)
-    title = Column(String(36), nullable=False)
+    title = Column(String(255), nullable=False)
     date = Column(String(36), nullable=False)
     time = Column(String(36), nullable=False)
     place = Column(String(255), nullable=False)
