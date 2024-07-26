@@ -4,7 +4,7 @@ from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
 from pymongo import MongoClient
 
-BASE_DIR = os.path.dirname(os.path.abspath("./"))
+BASE_DIR = os.path.dirname(os.path.relpath("./"))
 secret_file = os.path.join(BASE_DIR, 'secret.json')
 
 with open(secret_file) as f:
@@ -30,6 +30,7 @@ SERP_API_KEY = get_secret("SERP_API_KEY")
 MongoDB_Hostname = get_secret("MongoDB_Hostname")
 MongoDB_Username = get_secret("MongoDB_Username")
 MongoDB_Password = get_secret("MongoDB_Password")
+GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 
 DB_URL = f'mysql+pymysql://{SQLUSERNAME}:{SQLPASSWORD}@{HOSTNAME}:{PORT}/{SQLDBNAME}'
 
