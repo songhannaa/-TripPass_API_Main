@@ -86,6 +86,62 @@ def call_openai_function(query: str):
                     },
                     "required": ["query"]
                 }
+            },
+            {
+                "name": "check_trip_plan",
+                "description": "Get the trip plan details and confirm with the user",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_id": {
+                            "type": "string",
+                            "description": "User ID"
+                        },
+                        "trip_title": {
+                            "type": "string",
+                            "description": "Title of the trip"
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "Date of the trip"
+                        },
+                        "plan_title": {
+                            "type": "string",
+                            "description": "Title of the trip plan"
+                        }
+                    },
+                    "required": ["user_id", "trip_title", "date", "plan_title"]
+                }
+            },
+            {
+                "name": "update_trip_plan",
+                "description": "Update a trip plan with the given details",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_id": {
+                            "type": "string",
+                            "description": "User ID"
+                        },
+                        "trip_title": {
+                            "type": "string",
+                            "description": "Title of the trip"
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "Date of the trip"
+                        },
+                        "plan_title": {
+                            "type": "string",
+                            "description": "Title of the trip plan"
+                        },
+                        "new_time": {
+                            "type": "string",
+                            "description": "New time for the trip plan"
+                        }
+                    },
+                    "required": ["user_id", "trip_title", "date", "plan_title", "new_time"]
+                }
             }
         ],
         function_call="auto"
@@ -256,3 +312,63 @@ def savePlans(userId, tripId):
     response = model.generate_content(query).text
 
     return response
+
+def check_trip_plan(user_id: str, trip_title: str, plan_title: str, date: str):
+    """Get the trip plan details and check if the given user_id, trip_title, date, plan_title match. And confirm with the user"""
+    session = Session()
+
+    try:
+        # 날짜 형식 변환
+        formatted_date = convert_date_format(date)
+        
+        # 해당 여행의 계획을 찾음
+        trip = session.query(myTrips).filter_by(userId=user_id, title=trip_title).first()
+        if not trip:
+            return "Trip not found."
+
+        plan = session.query(tripPlans).filter_by(userId=user_id, tripId=trip.tripId, date=formatted_date, title=plan_title).first()
+
+        if plan:
+            confirmation_message = (
+                f"해당 계획을 수정하는 것이 맞나요?\n"
+                f"여행명: {trip.title}\n"
+                f"일정명: {plan.title}\n"
+                f"날짜: {plan.date}\n"
+                f"시간: {plan.time}\n"
+                f"장소: {plan.place}\n"
+            )
+            return confirmation_message
+        else:
+            return "일치하는 일정을 찾지 못하였습니다. 기존 일정을 확인 후, 다시 말씀해주세요."
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
+    finally:
+        session.close()
+
+# 여행 계획을 수정하는 함수
+def update_trip_plan(user_id: str, trip_title: str, date: str, plan_title: str, new_time: str):
+    """Update the trip plan with the given user_id, trip_title, date, plan_title, and new_time."""
+    session = Session()
+
+    try:
+        # 날짜 형식 변환
+        formatted_date = convert_date_format(date)
+
+        # 해당 여행의 계획을 찾음
+        trip = session.query(myTrips).filter_by(userId=user_id, title=trip_title).first()
+        if not trip:
+            return "Trip not found."
+
+        plan = session.query(tripPlans).filter_by(userId=user_id, tripId=trip.tripId, date=formatted_date, title=plan_title).first()
+        if plan:
+            # 계획 시간 업데이트
+            plan.time = new_time
+            session.commit()
+            return "성공적으로 일정 시간이 수정되었습니다."
+        else:
+            return "일정을 수정하는 과정에서 문제가 발생했습니다. 다시 시도해주세요."
+    except Exception as e:
+        session.rollback()
+        return f"An error occurred: {str(e)}"
+    finally:
+        session.close()
