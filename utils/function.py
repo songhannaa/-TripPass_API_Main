@@ -60,7 +60,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query for finding places"
+                            "description": "The search query for finding places. If the query isn't english, translate it in english."
                         },
                         "userId": {
                             "type": "string",
@@ -183,6 +183,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
                         result = confirmation_message
                     else:
                         result = "일정을 찾을 수 없습니다.(if문 확인용)"
+
         else:
             result = response.choices[0].message["content"]
     except KeyError:
@@ -202,13 +203,7 @@ def search_places(query: str, userId, tripId):
         "api_key": SERP_API_KEY
     }
     search = GoogleSearch(params)
-    results_data = search.get_dict()
-
-    return parseSerpData(results_data, userId, tripId)
-
-def parseSerpData(data, userId, tripId):
-    if 'local_results' not in data:
-        return ""
+    data = search.get_dict()
     
     translator = GoogleTranslator(source='en', target='ko')
     parsed_results = []
@@ -228,7 +223,7 @@ def parseSerpData(data, userId, tripId):
 
         if not address or not latitude or not longitude:
             continue
-
+        
         place_data = {
             "title": title,
             "rating": rating,
@@ -248,11 +243,12 @@ def parseSerpData(data, userId, tripId):
             formatted_place += f"    가격: {price}\n"
         
         formatted_results.append(formatted_place)
-    
+        
     document = {
         "userId": userId,
         "tripId": tripId,
-        "data": parsed_results
+        "data": parsed_results,
+        "isSerp": True
     }
 
     serp_collection.update_one(

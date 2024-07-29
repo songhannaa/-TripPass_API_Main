@@ -6,9 +6,6 @@ from datetime import datetime
 from models.models import *
 import json
 from database import sqldb, db, SERP_API_KEY
-import base64
-import uuid
-from utils.SerpSearch import queryConvert, serpPlace, parseSerpData
 from utils.function import *
 
 
@@ -29,6 +26,55 @@ def convert_objectid_to_str(doc):
     if '_id' in doc:
         doc['_id'] = str(doc['_id'])
     return doc
+
+def formatDate(dateObj):
+    return dateObj.strftime("%Y년 %m월 %d일")
+
+@router.get(path='/getWelcomeMessage', description="환영 메시지 가져오기")
+async def getWelcomeMessage(
+    userId: str = Query(...), 
+    tripId: str = Query(...),
+    session: Session = Depends(sqldb.sessionmaker)):
+    try:
+        # 여행 정보와 사용자 정보 가져오기
+        trip_info = session.query(myTrips).filter(myTrips.tripId == tripId).first()
+        user_info = session.query(user).filter(user.userId == userId).first()
+
+        if trip_info and user_info:
+            startDate = formatDate(trip_info.startDate)
+            endDate = formatDate(trip_info.endDate)
+            welcome_message = f"안녕하세요, {startDate}부터 {endDate}까지 {trip_info.city}로 여행을 가시는 {user_info.nickname}님!\n{user_info.nickname}님만의 여행 플랜 만들기를 시작해볼까요?\n제가 관광지, 식당, 카페 등 다양한 장소를 추천해드릴 수 있어요!\n추천 받길 원하시는 곳의 버튼을 눌러주세요."
+
+            # 환영 메시지를 메모리에 저장
+            from utils.function import memory
+            memory.save_context({"input": ""}, {"output": welcome_message})
+
+            # 환영 메시지를 ChatData_collection에 저장
+            chat_log = {
+                "userId": userId,
+                "tripId": tripId,
+                "conversation": [
+                    {
+                        "timestamp": datetime.utcnow(),
+                        "sender": "bot",
+                        "message": welcome_message,
+                        "isSerp": False
+                    }
+                ]
+            }
+
+            ChatData_collection.update_one(
+                {"userId": userId, "tripId": tripId},
+                {"$set": chat_log},
+                upsert=True
+            )
+
+            return {"result_code": 200, "welcome_message": welcome_message}
+        else:
+            return {"result_code": 404, "message": "Trip info or user info not found"}
+    except Exception as e:
+        return {"result_code": 400, "message": f"Error: {str(e)}"}
+
 
 @router.get(path='/getChatMessages', description="채팅 로그 가져오기")
 async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
@@ -136,28 +182,6 @@ async def updateTripPlan(
     
     finally:
         session.close()
-
-@router.post(path='/searchPlace', description="장소 검색 및 저장")
-async def searchPlace(request: QuestionRequest):
-    try:
-        # 사용자 입력을 받아서 SerpAPI 쿼리로 변환
-        query = queryConvert(request.message)
-        
-        # SerpAPI를 이용해 장소 검색
-        place_data = serpPlace(query, SERP_API_KEY, request.userId, request.tripId)
-        
-        # 검색 결과가 있으면 MongoDB에 저장
-        if place_data:
-            bot_message = "\n".join([
-                f"{idx + 1}. {place['title']}\n별점: {place['rating']}\n주소: {place['address']}\n설명: {place['description']}\n"
-                for idx, place in enumerate(place_data)
-            ])
-            await saveChatMessage(QuestionRequest(userId=request.userId, tripId=request.tripId, sender='bot', message=bot_message), isSerp=True)
-            return {"result_code": 200, "places": place_data}
-        else:
-            return {"result_code": 404, "message": "No results found."}
-    except Exception as e:
-        return {"result_code": 400, "message": f"Error: {str(e)}"}
 
 @router.post(path='/callOpenAIFunction', description="OpenAI 함수 호출")
 async def call_openai_function_endpoint(request: QuestionRequest):
