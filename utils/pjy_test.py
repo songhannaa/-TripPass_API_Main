@@ -80,9 +80,32 @@ def update_trip_plan(user_id: str, trip_id: str, date: str, plan_title: str, new
         formatted_date = convert_date_format(date)
         plan = session.query(tripPlans).filter_by(userId=user_id, tripId=trip_id, date=formatted_date, title=plan_title).first()
         if plan:
+            original_plan = {
+                "title": plan.title,
+                "date": plan.date,
+                "time": plan.time,
+                "place": plan.place,
+                "address": plan.address,
+                "latitude": plan.latitude,
+                "longitude": plan.longitude,
+                "description": plan.description
+            }
+
             plan.time = new_time
             session.commit()
-            return "성공적으로 일정 시간이 수정되었습니다."
+
+            updated_plan = {
+                "title": plan.title,
+                "date": plan.date,
+                "time": plan.time,
+                "place": plan.place,
+                "address": plan.address,
+                "latitude": plan.latitude,
+                "longitude": plan.longitude,
+                "description": plan.description
+            }
+
+            return f"수정 전 일정: {original_plan}\n수정 후 일정: {updated_plan}"
         else:
             return "해당 일정이 존재하지 않습니다."
     except Exception as e:
@@ -126,30 +149,19 @@ def process_request(user_query: str, user_id: str, trip_id: str):
         {"role": "system", "content": "You are a helpful assistant that provides travel recommendations and helps manage travel plans."}
     ]
 
-    intent_response = just_chat(f"Determine the intent of the following query: {user_query}")
+    response = call_openai_function(user_query)
 
-    if "update" in intent_response.lower():
-        date = input("수정하려는 계획의 날짜를 알려주세요 (예: 2024-09-13): ")
-        plan_title = input("수정하려는 계획의 제목을 알려주세요: ")
-        new_time = input("새로운 시간을 입력하세요 (HH:MM): ")
-
-        response = call_openai_function(
-            f"Update the trip plan for userId: {user_id}, tripId: {trip_id}, date: {date}, planTitle: {plan_title}, newTime: {new_time}"
-        )
-
-        try:
-            function_call = response.choices[0].message["function_call"]
-            if function_call["name"] == "update_trip_plan":
-                args = json.loads(function_call["arguments"])
-                date = args["date"]
-                plan_title = args["plan_title"]
-                new_time = args["new_time"]
-                update_response = update_trip_plan(user_id, trip_id, date, plan_title, new_time)
-                return update_response
-        except KeyError:
-            return response.choices[0].message["content"]
-    else:
-        return just_chat(user_query)
+    try:
+        function_call = response.choices[0].message["function_call"]
+        if function_call["name"] == "update_trip_plan":
+            args = json.loads(function_call["arguments"])
+            date = args["date"]
+            plan_title = args["plan_title"]
+            new_time = args["new_time"]
+            update_response = update_trip_plan(user_id, trip_id, date, plan_title, new_time)
+            return update_response
+    except KeyError:
+        return response.choices[0].message["content"]
 
 # 사용 예제
 if __name__ == "__main__":

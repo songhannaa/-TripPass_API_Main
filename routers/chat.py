@@ -185,10 +185,16 @@ async def call_openai_function_endpoint(request: QuestionRequest):
                 result = savePlans(request.userId, request.tripId)
             elif function_call["name"] == "update_trip_plan":
                 args = json.loads(function_call["arguments"])
-                result = update_trip_plan(args["user_id"], args["trip_title"], args["date"], args["plan_title"], args["new_time"])
-            elif function_call["name"] == "check_trip_plan":
-                args = json.loads(function_call["arguments"])
-                result = check_trip_plan(args["user_id"], args["trip_title"], args["plan_title"], args["date"])
+                # 올바른 값 추출
+                user_id = request.userId
+                trip_id = request.tripId
+                date = args["date"]
+                title = args["title"]
+                new_time = args["newTime"]
+                result = update_trip_plan(user_id, trip_id, date, title, new_time)
+            # elif function_call["name"] == "check_trip_plan":
+            #     args = json.loads(function_call["arguments"])
+            #     result = check_trip_plan(args["user_id"], args["trip_title"], args["plan_title"], args["date"])
 
         except KeyError:
             result = response.choices[0].message["content"]

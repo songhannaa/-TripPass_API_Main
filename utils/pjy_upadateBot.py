@@ -88,18 +88,18 @@ def call_openai_function(query: str):
                         },
                         "date": {
                             "type": "string",
-                            "description": "Date of the trip"
+                            "description": "Date of the tripPlans"
                         },
-                        "planTitle": {
+                        "title": {
                             "type": "string",
-                            "description": "Title of the trip plan"
+                            "description": "Title of the tripPlans"
                         },
                         "newTime": {
                             "type": "string",
                             "description": "New time for the trip plan"
                         }
                     },
-                    "required": ["userId", "tripId", "date", "planTitle", "newTime"]
+                    "required": ["userId", "tripId", "date", "title", "newTime"]
                 }
             }
         ],
@@ -107,12 +107,12 @@ def call_openai_function(query: str):
     )
     return response
 
-def update_trip_plan(userId: str, tripId: str, date: str, planTitle: str, newTime: str):
-    """Update the trip plan with the given userId, tripId, date, planTitle, and newTime."""
+def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTime: str):
+    """Update the trip plan with the given userId, tripId, date, title, and newTime."""
     session = Session()
 
     try:
-        plan = session.query(tripPlans).filter_by(userId=userId, tripId=tripId, date=date, title=planTitle).first()
+        plan = session.query(tripPlans).filter_by(userId=userId, tripId=tripId, date=date, title=title).first()
         if plan:
             # 계획 시간 업데이트
             plan.time = newTime
@@ -126,12 +126,68 @@ def update_trip_plan(userId: str, tripId: str, date: str, planTitle: str, newTim
     finally:
         session.close()
 
+# def check_trip_plan(user_id: str, trip_title: str, plan_title: str, date: str):
+#     """Get the trip plan details and check if the given user_id, trip_title, date, plan_title match. And confirm with the user"""
+#     session = Session()
+
+#     try:
+#         # 날짜 형식 변환
+#         formatted_date = convert_date_format(date)
+        
+#         # 해당 여행의 계획을 찾음
+#         trip = session.query(myTrips).filter_by(userId=user_id, title=trip_title).first()
+#         if not trip:
+#             return "Trip not found."
+
+#         plan = session.query(tripPlans).filter_by(userId=user_id, tripId=trip.tripId, date=formatted_date, title=plan_title).first()
+
+#         if plan:
+#             confirmation_message = (
+#                 f"해당 계획을 수정하는 것이 맞나요?\n"
+#                 f"여행명: {trip.title}\n"
+#                 f"일정명: {plan.title}\n"
+#                 f"날짜: {plan.date}\n"
+#                 f"시간: {plan.time}\n"
+#                 f"장소: {plan.place}\n"
+#             )
+#             return confirmation_message
+#         else:
+#             return "일치하는 일정을 찾지 못하였습니다. 기존 일정을 확인 후, 다시 말씀해주세요."
+#     except Exception as e:
+#         return f"An error occurred: {str(e)}"
+#     finally:
+#         session.close()
+
+# # 여행 계획을 수정하는 함수
+# def update_trip_plan(user_id: str, trip_title: str, date: str, plan_title: str, new_time: str):
+#     """Update the trip plan with the given user_id, trip_title, date, plan_title, and new_time."""
+#     session = Session()
+
+#     try:
+#         # 날짜 형식 변환
+#         formatted_date = convert_date_format(date)
+
+#         # 해당 여행의 계획을 찾음
+#         trip = session.query(myTrips).filter_by(userId=user_id, title=trip_title).first()
+#         if not trip:
+#             return "Trip not found."
+
+#         plan = session.query(tripPlans).filter_by(userId=user_id, tripId=trip.tripId, date=formatted_date, title=plan_title).first()
+#         if plan:
+#             # 계획 시간 업데이트
+#             plan.time = new_time
+#             session.commit()
+#             return "성공적으로 일정 시간이 수정되었습니다."
+#         else:
+#             return "일정을 수정하는 과정에서 문제가 발생했습니다. 다시 시도해주세요."
+#     except Exception as e:
+#         session.rollback()
+#         return f"An error occurred: {str(e)}"
+#     finally:
+#         session.close()
+
 # 사용 예제
-query = """
-나의 여행 계획을 수정하고 싶어.
-수정하려는 계획의 날짜는 2024-09-13이고, 계획의 제목은 '해변 산책'입니다.
-이 계획의 시간을 16:00로 변경해주세요.
-"""
+query = """나의 여행 계획을 수정하고 싶어. 수정하려는 계획의 날짜는 2024년 9월 13일이고, 일정명은 해변 산책 이야. 시간을 15:00로 변경해줄래?"""
 
 response = call_openai_function(query)
 
@@ -143,10 +199,11 @@ try:
     if function_call["name"] == "update_trip_plan":
         args = json.loads(function_call["arguments"])
         date = args["date"]
-        planTitle = args["planTitle"]
+        title = args["title"]
         newTime = args["newTime"]
-        response = update_trip_plan(userId, tripId, date, planTitle, newTime)
+        response = update_trip_plan(userId, tripId, date, title, newTime)
 except KeyError:
     response = response.choices[0].message["content"]
 
 print(response)
+
