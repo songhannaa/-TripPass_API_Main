@@ -15,10 +15,14 @@ from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY,
 from models.models import myTrips, tripPlans
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
+from typing import Optional
+import datetime
 
 # ConversationBufferMemory 초기화
 if 'memory' not in globals():
     memory = ConversationBufferMemory()
+
+pending_updates = {}
 
 def message_to_dict(msg: BaseMessage):
     if isinstance(msg, HumanMessage):
@@ -56,7 +60,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query for finding places"
+                            "description": "The search query for finding places. If the query isn't english, translate it in english."
                         },
                         "userId": {
                             "type": "string",
@@ -113,32 +117,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
                 }
             },
             {
-                "name": "check_trip_plan",
-                "description": "Get the trip plan details and confirm with the user",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {
-                            "type": "string",
-                            "description": "User ID"
-                        },
-                        "trip_title": {
-                            "type": "string",
-                            "description": "Title of the trip"
-                        },
-                        "date": {
-                            "type": "string",
-                            "description": "Date of the trip"
-                        },
-                        "plan_title": {
-                            "type": "string",
-                            "description": "Title of the trip plan"
-                        }
-                    },
-                    "required": ["user_id", "trip_title", "date", "plan_title"]
-                }
-            },
-            {
                 "name": "update_trip_plan",
                 "description": "Update a trip plan with the given details",
                 "parameters": {
@@ -148,6 +126,8 @@ def call_openai_function(query: str, userId: str, tripId: str):
                         "tripId": {"type": "string", "description": "내가 입력한 uuid를 기준으로 해줘."},
                         "date": {"type": "string", "description": "Date of the tripPlans"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
+                        "newTitle": {"type": "string", "description": "New title for the trip plan"},
+                        "newDate": {"type": "string", "description": "New date for the trip plan"},
                         "newTime": {"type": "string", "description": "New time for the trip plan"}
                     },
                     "required": ["userId", "tripId", "date", "title", "newTime"]
@@ -177,15 +157,33 @@ def call_openai_function(query: str, userId: str, tripId: str):
         elif function_name == "save_plan":
             args = json.loads(function_call["arguments"])
             result = savePlans(userId, tripId)
-        elif function_call["name"] == "update_trip_plan":
+        elif function_name == "update_trip_plan":
             args = json.loads(function_call["arguments"])
-            # 올바른 값 추출
-            user_id = request.userId
-            trip_id = request.tripId
-            date = args["date"]
-            title = args["title"]
-            new_time = args["newTime"]
-            result = update_trip_plan(user_id, trip_id, date, title, new_time)
+            
+            if query.strip() == "확인":
+                # print(update_trip_plan_confirmed(userId))
+                result = update_trip_plan_confirmed(userId)
+            else:
+                original_plan, confirmation_message = get_plan_details(userId, tripId, args["date"], args["title"])
+                print(confirmation_message)
+                
+                if original_plan:
+                    pending_updates[userId] = {
+                        "tripId": tripId,
+                        "date": args["date"],
+                        "title": args["title"],
+                        "newTitle": args.get("newTitle", args["title"]),
+                        "newDate": args.get("newDate", args["date"]),
+                        "newTime": args["newTime"]
+                    }
+                    print(pending_updates)
+                    result = confirmation_message
+                else:
+                    if original_plan is None:
+                        result = confirmation_message
+                    else:
+                        result = "일정을 찾을 수 없습니다.(if문 확인용)"
+
         else:
             result = response.choices[0].message["content"]
     except KeyError:
@@ -205,13 +203,7 @@ def search_places(query: str, userId, tripId):
         "api_key": SERP_API_KEY
     }
     search = GoogleSearch(params)
-    results_data = search.get_dict()
-
-    return parseSerpData(results_data, userId, tripId)
-
-def parseSerpData(data, userId, tripId):
-    if 'local_results' not in data:
-        return ""
+    data = search.get_dict()
     
     translator = GoogleTranslator(source='en', target='ko')
     parsed_results = []
@@ -231,7 +223,7 @@ def parseSerpData(data, userId, tripId):
 
         if not address or not latitude or not longitude:
             continue
-
+        
         place_data = {
             "title": title,
             "rating": rating,
@@ -251,11 +243,12 @@ def parseSerpData(data, userId, tripId):
             formatted_place += f"    가격: {price}\n"
         
         formatted_results.append(formatted_place)
-    
+        
     document = {
         "userId": userId,
         "tripId": tripId,
-        "data": parsed_results
+        "data": parsed_results,
+        "isSerp": True
     }
 
     serp_collection.update_one(
@@ -363,15 +356,21 @@ def savePlans(userId, tripId):
 
     return response
 
-def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTime: str):
+# 지영
+def get_plan_details(userId: str, tripId: str, date: str, title: str):
     session = sqldb.sessionmaker()
-
     try:
         # 디버그용 출력
-        print(f"userId: {userId}, tripId: {tripId}, date: {date}, title: {title}")
+        print(f"Searching for plan with userId={userId}, tripId={tripId}, date={date}, title={title}")
 
+        # 실제 쿼리를 직접 확인해봅니다.
         plan = session.query(tripPlans).filter_by(userId=userId, tripId=tripId, date=date, title=title).first()
+        print(f"Query result: {plan.crewId}")
+
         if plan:
+            if plan.crewId is not None:
+                return None, "크루가 존재합니다! 일정 변경이 불가능 합니다!(get_plan_detail)"
+                
             original_plan = {
                 "title": plan.title,
                 "date": plan.date,
@@ -382,7 +381,68 @@ def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTime: s
                 "longitude": plan.longitude,
                 "description": plan.description
             }
+
+            confirmation_message = (
+                f"해당 일정을 다음과 같이 수정하시겠습니까?\n\n"
+                f"[현재 일정]\n"
+                f"일정명: {original_plan['title']}\n"
+                f"날짜: {original_plan['date']}\n"
+                f"시간: {original_plan['time']}\n"
+                f"장소: {original_plan['place']}\n"
+                f"주소: {original_plan['address']}\n\n"
+                f"수정하려면 '확인'을 입력해주세요."
+            )
+
+            return original_plan, confirmation_message
+        else:
+            return None, "일정을 찾을 수 없습니다.(get_plan_detail)"
+    except Exception as e:
+        return None, f"An error occurred: {str(e)}"
+    finally:
+        session.close()
+
+
+#지영
+def update_trip_plan_confirmed(userId: str):
+    if userId not in pending_updates:
+        return "No pending update found for the user."
+
+    update_details = pending_updates[userId]
+    result = update_trip_plan(
+        userId=userId,
+        tripId=update_details["tripId"],
+        date=update_details["date"],
+        title=update_details["title"],
+        newTitle=update_details["newTitle"],
+        newDate=update_details["newDate"],
+        newTime=update_details["newTime"]
+    )
+
+    del pending_updates[userId]
+    return result
+
+#지영
+def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTitle: str, newDate: str, newTime: str):
+    session = sqldb.sessionmaker()
+    try:
+        plan = session.query(tripPlans).filter_by(userId=userId, tripId=tripId, date=date, title=title).first()
+        if plan:
+            if plan.crewId:
+                return "크루가 존재합니다! 일정 변경이 불가능 합니다!(update)"
             
+            original_plan = {
+                "title": plan.title,
+                "date": plan.date,
+                "time": plan.time,
+                "place": plan.place,
+                "address": plan.address,
+                "latitude": plan.latitude,
+                "longitude": plan.longitude,
+                "description": plan.description
+            }
+
+            plan.title = newTitle
+            plan.date = newDate
             plan.time = newTime
             session.commit()
 
@@ -397,13 +457,25 @@ def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTime: s
                 "description": plan.description
             }
 
-            return f"수정 전 일정: {original_plan}\n수정 후 일정: {updated_plan}"
+            return (
+                "성공적으로 일정이 수정되었습니다!\n\n"
+                f"[수정 전 일정]\n"
+                f"일정명: {original_plan['title']}\n"
+                f"날짜: {original_plan['date']}\n"
+                f"시간: {original_plan['time']}\n"
+                f"장소: {original_plan['place']}\n"
+                f"주소: {original_plan['address']}\n\n"
+                f"[수정 후 일정]\n"
+                f"일정명: {updated_plan['title']}\n"
+                f"날짜: {updated_plan['date']}\n"
+                f"시간: {updated_plan['time']}\n"
+                f"장소: {updated_plan['place']}\n"
+                f"주소: {updated_plan['address']}\n"
+            )
         else:
-            return "일정을 찾을 수 없습니다."
+            return "일정을 찾을 수 없습니다.(update_trip_plan)"
     except Exception as e:
         session.rollback()
         return f"An error occurred: {str(e)}"
     finally:
         session.close()
-
-def check_trip_plan()
