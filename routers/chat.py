@@ -1,11 +1,11 @@
 from fastapi import FastAPI, APIRouter, Query, HTTPException, Depends, Form
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Optional
 from datetime import datetime
 from models.models import *
 import json
-from database import sqldb , db , SERP_API_KEY
+from database import sqldb, db, SERP_API_KEY
 import base64
 import uuid
 from utils.SerpSearch import queryConvert, serpPlace, parseSerpData
@@ -15,8 +15,8 @@ from utils.function import *
 router = APIRouter()
 
 # mongodb collection
-ChatData_collection=db['ChatData']
-SavePlace_collection=db['SavePlace']
+ChatData_collection = db['ChatData']
+SavePlace_collection = db['SavePlace']
 
 class QuestionRequest(BaseModel):
     userId: str
@@ -45,16 +45,15 @@ async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
 
 @router.post(path='/saveChatMessage', description="채팅 로그 저장")
 async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
-    
-    # 채팅 로그 생성
-    chat_log = {
-        "timestamp": datetime.utcnow(),
-        "sender": request.sender,
-        "message": request.message,
-        "isSerp": isSerp
-    }
-    
     try:
+        # 채팅 로그 생성
+        chat_log = {
+            "timestamp": datetime.utcnow(),
+            "sender": request.sender,
+            "message": request.message,
+            "isSerp": isSerp
+        }
+        
         # userId와 tripId가 있는지 확인하고 업데이트 또는 삽입
         result = ChatData_collection.update_one(
             {"userId": request.userId, "tripId": request.tripId},
@@ -67,30 +66,30 @@ async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
             },
             upsert=True
         )
+
+        if result.upserted_id is not None:
+            response_message = "New chat log created successfully"
+        else:
+            response_message = "Chat log updated successfully"
+
+        return {"result_code": 200, "response": response_message}
+
+    except ValidationError as e:
+        return {"result_code": 422, "response": f"Validation error: {str(e)}"}
     except Exception as e:
-        return {"result code": 400, "response": f"Error: {str(e)}"}
-
-    if result.upserted_id is not None:
-        response_message = "New chat log created successfully"
-    else:
-        response_message = "Chat log updated successfully"
-
-    return {"result code": 200, "response": response_message}
-
-
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
 
 @router.get(path='/getSavePlace', description="선택한 장소 가져오기")
 async def getSavedPlaces(userId: str = Query(...), tripId: str = Query(...)):
     try:
         document = SavePlace_collection.find_one({"userId": userId, "tripId": tripId})
-        response_data = document.get('placeData', [])
         if document:
-            return {"result code": 200, "response": response_data}
+            response_data = document.get('placeData', [])
+            return {"result_code": 200, "response": response_data}
         else:
-            return {"result code": 404, "response": "Document not found"}
+            return {"result_code": 404, "response": "Document not found"}
     except Exception as e:
-        return {"result code": 400, "response": f"Error: {str(e)}"}
-    
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
 
 @router.post(path='/updateTripPlan', description="여행 계획 수정")
 async def updateTripPlan(
@@ -129,15 +128,14 @@ async def updateTripPlan(
         if not updated:
             raise HTTPException(status_code=404, detail="No matching plan found to update.")
 
-        return {"result code": 200, "response": "Plan updated successfully"}
+        return {"result_code": 200, "response": "Plan updated successfully"}
     
     except Exception as e:
         session.rollback()
-        return {"result code": 400, "response": f"Error: {str(e)}"}
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
     
     finally:
         session.close()
-
 
 @router.post(path='/searchPlace', description="장소 검색 및 저장")
 async def searchPlace(request: QuestionRequest):
@@ -161,38 +159,15 @@ async def searchPlace(request: QuestionRequest):
     except Exception as e:
         return {"result_code": 400, "message": f"Error: {str(e)}"}
 
-
 @router.post(path='/callOpenAIFunction', description="OpenAI 함수 호출")
 async def call_openai_function_endpoint(request: QuestionRequest):
     try:
         # OpenAI 함수를 호출하고 응답 받기
-        response = call_openai_function(request.message)
+        response = call_openai_function(request.message, request.userId, request.tripId)
 
-        try:
-            function_call = response.choices[0].message["function_call"]
-            if function_call["name"] == "search_places":
-                args = json.loads(function_call["arguments"])
-                search_query = args["query"]
-                result = search_places(search_query, request.userId, request.tripId)
-            elif function_call["name"] == "just_chat":
-                args = json.loads(function_call["arguments"])
-                result = just_chat(args["query"])
-            elif function_call["name"] == "save_place":
-                args = json.loads(function_call["arguments"])
-                result = extractNumbers(args["query"], request.userId, request.tripId)
-            elif function_call["name"] == "save_plan":
-                args = json.loads(function_call["arguments"])
-                result = savePlans(request.userId, request.tripId)
-            elif function_call["name"] == "update_trip_plan":
-                args = json.loads(function_call["arguments"])
-                result = update_trip_plan(args["user_id"], args["trip_title"], args["date"], args["plan_title"], args["new_time"])
-            elif function_call["name"] == "check_trip_plan":
-                args = json.loads(function_call["arguments"])
-                result = check_trip_plan(args["user_id"], args["trip_title"], args["plan_title"], args["date"])
+        return {"result_code": 200, "response": response}
 
-        except KeyError:
-            result = response.choices[0].message["content"]
-
-        return {"result_code": 200, "response": result}
+    except ValidationError as e:
+        return {"result_code": 422, "response": f"Validation error: {str(e)}"}
     except Exception as e:
-        return {"result_code": 400, "message": f"Error: {str(e)}"}
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
