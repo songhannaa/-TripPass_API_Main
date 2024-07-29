@@ -56,7 +56,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query for finding places"
+                            "description": "The search query for finding places. If the query isn't english, translate it in english."
                         },
                         "userId": {
                             "type": "string",
@@ -177,15 +177,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
         elif function_name == "save_plan":
             args = json.loads(function_call["arguments"])
             result = savePlans(userId, tripId)
-        elif function_call["name"] == "update_trip_plan":
-            args = json.loads(function_call["arguments"])
-            # 올바른 값 추출
-            user_id = request.userId
-            trip_id = request.tripId
-            date = args["date"]
-            title = args["title"]
-            new_time = args["newTime"]
-            result = update_trip_plan(user_id, trip_id, date, title, new_time)
         else:
             result = response.choices[0].message["content"]
     except KeyError:
@@ -205,13 +196,7 @@ def search_places(query: str, userId, tripId):
         "api_key": SERP_API_KEY
     }
     search = GoogleSearch(params)
-    results_data = search.get_dict()
-
-    return parseSerpData(results_data, userId, tripId)
-
-def parseSerpData(data, userId, tripId):
-    if 'local_results' not in data:
-        return ""
+    data = search.get_dict()
     
     translator = GoogleTranslator(source='en', target='ko')
     parsed_results = []
@@ -231,7 +216,7 @@ def parseSerpData(data, userId, tripId):
 
         if not address or not latitude or not longitude:
             continue
-
+        
         place_data = {
             "title": title,
             "rating": rating,
@@ -251,11 +236,12 @@ def parseSerpData(data, userId, tripId):
             formatted_place += f"    가격: {price}\n"
         
         formatted_results.append(formatted_place)
-    
+        
     document = {
         "userId": userId,
         "tripId": tripId,
-        "data": parsed_results
+        "data": parsed_results,
+        "isSerp": True
     }
 
     serp_collection.update_one(
@@ -405,5 +391,3 @@ def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTime: s
         return f"An error occurred: {str(e)}"
     finally:
         session.close()
-
-def check_trip_plan()
