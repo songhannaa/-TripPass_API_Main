@@ -13,15 +13,38 @@ from sqlalchemy import create_engine,Column, String, INT,  FLOAT, LargeBinary, J
 import google.generativeai as genai
 from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY, SERP_API_KEY,db
 from models.models import myTrips, tripPlans
+from langchain.memory import ConversationBufferMemory
+from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
 
+# ConversationBufferMemory 초기화
+if 'memory' not in globals():
+    memory = ConversationBufferMemory()
 
-def call_openai_function(query: str):
+def message_to_dict(msg: BaseMessage):
+    if isinstance(msg, HumanMessage):
+        return {"role": "user", "content": msg.content}
+    elif isinstance(msg, AIMessage):
+        return {"role": "assistant", "content": msg.content}
+    elif isinstance(msg, SystemMessage):
+        return {"role": "system", "content": msg.content}
+    else:
+        raise ValueError(f"Unknown message type: {type(msg)}")
+
+def call_openai_function(query: str, userId: str, tripId: str):
+    
+    memory.save_context({"input": query}, {"output": ""})
+    print(memory)
+    
+    # 메시지를 적절한 형식으로 변환
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant that helps users plan their travel plans."},
+    ] + [message_to_dict(msg) for msg in memory.chat_memory.messages] + [
+        {"role": "user", "content": query}
+    ]
+    
     response = openai.ChatCompletion.create(
         model="gpt-4-0613",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that provides travel recommendations."},
-            {"role": "user", "content": query}
-        ],
+        messages=messages,
         functions=[
             {
                 "name": "search_places",
@@ -146,7 +169,43 @@ def call_openai_function(query: str):
         ],
         function_call="auto"
     )
-    return response
+
+    try:
+        function_call = response.choices[0].message["function_call"]
+        function_name = function_call["name"]
+        
+        # 호출된 함수 이름을 출력
+        print(f"Calling function: {function_name}")
+
+        if function_name == "search_places":
+            args = json.loads(function_call["arguments"])
+            search_query = args["query"]
+            result = search_places(search_query, userId, tripId)
+        elif function_name == "just_chat":
+            args = json.loads(function_call["arguments"])
+            result = just_chat(args["query"])
+        elif function_name == "save_place":
+            args = json.loads(function_call["arguments"])
+            result = extractNumbers(args["query"], userId, tripId)
+        elif function_name == "save_plan":
+            args = json.loads(function_call["arguments"])
+            result = savePlans(userId, tripId)
+        elif function_name == "update_trip_plan":
+            args = json.loads(function_call["arguments"])
+            result = update_trip_plan(args["user_id"], args["trip_title"], args["date"], args["plan_title"], args["new_time"])
+        elif function_name == "check_trip_plan":
+            args = json.loads(function_call["arguments"])
+            result = check_trip_plan(args["user_id"], args["trip_title"], args["plan_title"], args["date"])
+        else:
+            result = response.choices[0].message["content"]
+    except KeyError:
+        result = response.choices[0].message["content"]
+
+    # 대화 메모리에 응답 추가
+    memory.save_context({"input": query}, {"output": result})
+
+    return result
+
 
 def search_places(query: str, userId, tripId):
     params = {
@@ -162,10 +221,11 @@ def search_places(query: str, userId, tripId):
 
 def parseSerpData(data, userId, tripId):
     if 'local_results' not in data:
-        return []
+        return ""
     
     translator = GoogleTranslator(source='en', target='ko')
     parsed_results = []
+    formatted_results = []
     serp_collection = db['SerpData']
     
     for idx, result in enumerate(data['local_results'], 1):
@@ -196,10 +256,11 @@ def parseSerpData(data, userId, tripId):
         
         parsed_results.append(place_data)
         
+        formatted_place = f"{idx}. 장소 이름: {title}\n    별점: {rating}\n    주소: {address}\n    설명: {translated_description}\n"
         if price:
-            print(f"{idx}. 장소 이름: {title}\n    별점: {rating}\n    주소: {address}\n    가격: {price}\n    설명: {translated_description}\n")
-        else:
-            print(f"{idx}. 장소 이름: {title}\n    별점: {rating}\n    주소: {address}\n    설명: {translated_description}\n")
+            formatted_place += f"    가격: {price}\n"
+        
+        formatted_results.append(formatted_place)
     
     document = {
         "userId": userId,
@@ -213,7 +274,10 @@ def parseSerpData(data, userId, tripId):
         upsert=True
     )
 
-    return parsed_results
+    # 모든 장소 정보를 하나의 큰 문자열로 결합
+    formatted_results_str = "\n".join(formatted_results)
+
+    return formatted_results_str
 
 def just_chat(query: str):
     response = openai.ChatCompletion.create(
@@ -236,10 +300,6 @@ def saveSelectedPlace(userId, tripId, indexes):
     save_place_collection = db['SavePlace']
     
     document = serp_collection.find_one({"userId": userId, "tripId": tripId})
-    if not document:
-        print(userId, tripId)
-        print("No matching document found in SerpData.")
-        return
     
     serp_data_length = len(document['data'])
     valid_indexes = [index-1 for index in indexes if 0 <= index-1 < serp_data_length]
