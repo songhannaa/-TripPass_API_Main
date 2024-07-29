@@ -162,11 +162,8 @@ async def searchPlace(request: QuestionRequest):
 @router.post(path='/callOpenAIFunction', description="OpenAI 함수 호출")
 async def call_openai_function_endpoint(request: QuestionRequest):
     try:
-        # OpenAI 함수를 호출하고 응답 받기
         response = call_openai_function(request.message, request.userId, request.tripId)
-
         return {"result_code": 200, "response": response}
-
     except ValidationError as e:
         return {"result_code": 422, "response": f"Validation error: {str(e)}"}
     except Exception as e:
