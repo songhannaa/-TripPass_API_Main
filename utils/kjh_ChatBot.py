@@ -42,10 +42,11 @@ def message_to_dict(msg: BaseMessage):
 def call_openai_function(query: str):
     # 대화 메모리에 사용자 입력 추가
     memory.save_context({"input": query}, {"output": ""})
+    print(memory)
 
     # 메시지를 적절한 형식으로 변환
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that provides travel recommendations."},
+        {"role": "system", "content": "You are a helpful assistant that helps users plan their travel plans."},
     ] + [message_to_dict(msg) for msg in memory.chat_memory.messages] + [
         {"role": "user", "content": query}
     ]
