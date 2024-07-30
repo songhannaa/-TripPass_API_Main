@@ -187,7 +187,7 @@ async def updateTripPlan(
 async def call_openai_function_endpoint(request: QuestionRequest):
     try:
         response = call_openai_function(request.message, request.userId, request.tripId)
-        return {"result_code": 200, "response": response["result"], "isSerp": response.get("isSerp")}
+        return {"result_code": 200, "response": response["result"], "geo": response.get("geo_coordinates"), "isSerp": response.get("isSerp")}
     except ValidationError as e:
         return {"result_code": 422, "response": f"Validation error: {str(e)}"}
     except Exception as e:
