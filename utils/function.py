@@ -9,7 +9,7 @@ import re
 import uuid
 from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine,Column, String, INT,  FLOAT, LargeBinary, JSON
+from sqlalchemy import create_engine, Column, String, INT, FLOAT, LargeBinary, JSON
 import google.generativeai as genai
 from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY, SERP_API_KEY,db
 from models.models import myTrips, tripPlans
@@ -54,13 +54,13 @@ def call_openai_function(query: str, userId: str, tripId: str):
         functions=[
             {
                 "name": "search_places",
-                "description": "Search for various types of places based on user query",
+                "description": "Search for various types of places based on user query, such as 'popular cafes in Barcelona'. This function should be used for general searches where the user is looking for multiple options or recommendations.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query for finding places. If the query isn't english, translate it in english."
+                            "description": "The search query for finding places. Include keywords like 'find', 'popular', 'recommend', 'cafes', 'restaurants', etc. If the query isn't in English, translate it to English."
                         },
                         "userId": {
                             "type": "string",
@@ -132,6 +132,28 @@ def call_openai_function(query: str, userId: str, tripId: str):
                     },
                     "required": ["userId", "tripId", "date", "title", "newTime"]
                 }
+            },
+            {
+                "name": "search_place_details",
+                "description": "Fetch detailed information about a specific place based on the place name. This function should be used when the user provides a specific place name and wants detailed information about it.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The name of the place to get details for. If the query isn't english, translate it in english."
+                        },
+                        "userId": {
+                            "type": "string",
+                            "description": "The user ID for the search context"
+                        },
+                        "tripId": {
+                            "type": "string",
+                            "description": "The trip ID for the search context"
+                        }
+                    },
+                    "required": ["query", "userId", "tripId"]
+                }
             }
         ],
         function_call="auto"
@@ -148,6 +170,10 @@ def call_openai_function(query: str, userId: str, tripId: str):
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
             result = search_places(search_query, userId, tripId)
+        elif function_name == "search_place_details":
+            args = json.loads(function_call["arguments"])
+            search_query = args["query"]
+            result = search_place_details(search_query, userId, tripId)
         elif function_name == "just_chat":
             args = json.loads(function_call["arguments"])
             result = just_chat(args["query"])
@@ -159,7 +185,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
             result = savePlans(userId, tripId)
         elif function_name == "update_trip_plan":
             args = json.loads(function_call["arguments"])
-            
             if query.strip() == "확인":
                 # print(update_trip_plan_confirmed(userId))
                 result = update_trip_plan_confirmed(userId)
@@ -183,7 +208,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
                         result = confirmation_message
                     else:
                         result = "일정을 찾을 수 없습니다.(if문 확인용)"
-
         else:
             result = response.choices[0].message["content"]
     except KeyError:
@@ -479,3 +503,64 @@ def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTitle: 
         return f"An error occurred: {str(e)}"
     finally:
         session.close()
+
+# 사용자 입력 버튼용 (특정 장소명에 대한 정보를 serp에서 불러오기)
+def search_place_details(query: str, userId, tripId):
+    params = {
+        "engine": "google_maps",
+        "q": query,
+        "hl": "en",
+        "api_key": SERP_API_KEY
+    }
+    search = GoogleSearch(params)
+    data = search.get_dict()
+    
+    translator = GoogleTranslator(source='en', target='ko')
+    result = data.get('place_results', {})
+    
+    serp_collection = db['SerpData']
+    
+    title = result.get('title')
+    rating = result.get('rating')
+    address = result.get('address')
+    gps_coordinates = result.get('gps_coordinates', {})
+    latitude = gps_coordinates.get('latitude')
+    longitude = gps_coordinates.get('longitude')
+    description = result.get('description', 'No description available.')
+    translated_description = translator.translate(description)
+    price = result.get('price', None)
+
+    if not address or not latitude or not longitude:
+        return "유효한 장소 정보를 찾을 수 없습니다."
+        
+    place_data = {
+        "title": title,
+        "rating": rating,
+        "address": address,
+        "latitude": latitude,
+        "longitude": longitude,
+        "description": translated_description,
+        "price": price,
+        "date": None,
+        "time": None
+    }
+    
+    formatted_result = f"장소 이름: {title}\n주소: {address}\n설명: {translated_description}\n"
+    if price:
+        formatted_result += f"    가격: {price}\n"
+    
+    formatted_result += "입력하신 장소가 맞나요? 맞으면 저장해드릴게요!"
+    
+    document = {
+        "userId": userId,
+        "tripId": tripId,
+        "data": place_data
+    }
+
+    serp_collection.update_one(
+        {"userId": userId, "tripId": tripId},
+        {"$set": document},
+        upsert=True
+    )
+
+    return formatted_result
