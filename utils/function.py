@@ -174,6 +174,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
             result = search_place_details(search_query, userId, tripId)
+            isSerp = True
         elif function_name == "just_chat":
             args = json.loads(function_call["arguments"])
             result = just_chat(args["query"])
@@ -606,7 +607,7 @@ def search_place_details(query: str, userId, tripId):
         "time": None
     }
     
-    formatted_result = f"장소 이름: {title}\n주소: {address}\n설명: {translated_description}\n"
+    formatted_result = f"*장소 이름: {title}\n주소: {address}\n설명: {translated_description}\n"
     if price:
         formatted_result += f"    가격: {price}\n"
     
