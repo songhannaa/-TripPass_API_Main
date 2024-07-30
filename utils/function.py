@@ -368,7 +368,7 @@ def get_plan_details(userId: str, tripId: str, date: str, title: str):
         print(f"Query result: {plan.crewId}")
 
         if plan:
-            if plan.crewId is not None:
+            if plan.crewId:
                 return None, "크루가 존재합니다! 일정 변경이 불가능 합니다!(get_plan_detail)"
                 
             original_plan = {
@@ -426,6 +426,8 @@ def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTitle: 
     session = sqldb.sessionmaker()
     try:
         plan = session.query(tripPlans).filter_by(userId=userId, tripId=tripId, date=date, title=title).first()
+        print(f"Update trip plan query result: {plan}")
+
         if plan:
             if plan.crewId:
                 return "크루가 존재합니다! 일정 변경이 불가능 합니다!(update)"
