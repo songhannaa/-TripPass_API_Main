@@ -55,7 +55,7 @@ async def getWelcomeMessage(
                 "tripId": tripId,
                 "conversation": [
                     {
-                        "timestamp": datetime.utcnow(),
+                        "timestamp": datetime.datetime.now(),
                         "sender": "bot",
                         "message": welcome_message,
                         "isSerp": False
@@ -94,7 +94,7 @@ async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
     try:
         # 채팅 로그 생성
         chat_log = {
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.datetime.now(),
             "sender": request.sender,
             "message": request.message,
             "isSerp": isSerp
