@@ -41,7 +41,7 @@ class tripPlans(Base):
     address = Column(String(100), nullable=False)
     latitude = Column(FLOAT, nullable=False)
     longitude = Column(FLOAT, nullable=False)
-    description = Column(String(100), nullable=False)
+    description = Column(String(255), nullable=False)
     crewId = Column(String(36), nullable=True)
 
 class crew(Base):
