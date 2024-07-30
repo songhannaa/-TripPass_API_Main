@@ -183,11 +183,56 @@ def just_chat(query: str):
     )
     return response.choices[0].message["content"]
 
+# 사용자 입력 버튼용
+def search_place_details(query: str):
+    params = {
+        "engine": "google_maps",
+        "q": query,
+        "hl": "en",
+        "api_key": SERP_API_KEY,
+    }
+    search = GoogleSearch(params)
+    data = search.get_dict()
+    
+    translator = GoogleTranslator(source='en', target='ko')
+    result = data.get('place_results', {})
+    
+    title = result.get('title')
+    rating = result.get('rating')
+    address = result.get('address')
+    gps_coordinates = result.get('gps_coordinates', {})
+    latitude = gps_coordinates.get('latitude')
+    longitude = gps_coordinates.get('longitude')
+    description = result.get('description', 'No description available.')
+    translated_description = translator.translate(description)
+    price = result.get('price', None)
+
+    if not address or not latitude or not longitude:
+        return "유효한 장소 정보를 찾을 수 없습니다."
+
+    place_data = {
+        "title": title,
+        "rating": rating,
+        "address": address,
+        "latitude": latitude,
+        "longitude": longitude,
+        "description": translated_description,
+        "price": price,
+        "date": None,
+        "time": None
+    }
+    
+    formatted_result = f"장소 이름: {title}\n주소: {address}\n설명: {translated_description}\n"
+    if price:
+        formatted_result += f"    가격: {price}\n"
+        
+    return formatted_result, place_data
+
 # 무한 루프를 사용하여 사용자 입력을 계속 받아 처리
 while True:
     query = input("입력: ")
     if query.lower() in ['exit', 'quit']:
         break
     
-    response = call_openai_function(query)
-    print(response)
+    response, data = search_places(query)
+    print(response, data)

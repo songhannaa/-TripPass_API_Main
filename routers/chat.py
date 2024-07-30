@@ -5,7 +5,7 @@ from typing import Optional
 from datetime import datetime
 from models.models import *
 import json
-from database import sqldb, db, SERP_API_KEY
+from database import sqldb, db
 from utils.function import *
 
 
@@ -20,6 +20,7 @@ class QuestionRequest(BaseModel):
     tripId: str
     sender: str
     message: str
+    isSerp: Optional[bool] = None
 
 # ObjectId를 문자열로 변환하는 헬퍼 함수
 def convert_objectid_to_str(doc):
@@ -55,7 +56,7 @@ async def getWelcomeMessage(
                 "tripId": tripId,
                 "conversation": [
                     {
-                        "timestamp": datetime.utcnow(),
+                        "timestamp": datetime.datetime.now(),
                         "sender": "bot",
                         "message": welcome_message,
                         "isSerp": False
@@ -90,16 +91,15 @@ async def getChatMessages(userId: str = Query(...), tripId: str = Query(...)):
         return {"result_code": 400, "messages": f"Error: {str(e)}"}
 
 @router.post(path='/saveChatMessage', description="채팅 로그 저장")
-async def saveChatMessage(request: QuestionRequest, isSerp: bool = False):
+async def saveChatMessage(request: QuestionRequest):
     try:
         # 채팅 로그 생성
         chat_log = {
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.datetime.now(),
             "sender": request.sender,
             "message": request.message,
-            "isSerp": isSerp
+            "isSerp": request.isSerp or False
         }
-        
         # userId와 tripId가 있는지 확인하고 업데이트 또는 삽입
         result = ChatData_collection.update_one(
             {"userId": request.userId, "tripId": request.tripId},
@@ -187,7 +187,7 @@ async def updateTripPlan(
 async def call_openai_function_endpoint(request: QuestionRequest):
     try:
         response = call_openai_function(request.message, request.userId, request.tripId)
-        return {"result_code": 200, "response": response}
+        return {"result_code": 200, "response": response["result"], "isSerp": response.get("isSerp")}
     except ValidationError as e:
         return {"result_code": 422, "response": f"Validation error: {str(e)}"}
     except Exception as e:
