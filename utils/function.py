@@ -118,7 +118,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
             },
             {
                 "name": "update_trip_plan",
-                "description": "Update a trip plan with the given details, 질문자가 한국어로 물어보니까 한국어로 return값을 줘",
+                "description": "Update a trip plan with the given details, 사용자가 일정을 수정하고 싶다는 말을 하면 이걸로 분류해줘",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -162,14 +162,14 @@ def call_openai_function(query: str, userId: str, tripId: str):
     try:
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
+        geo_coordinates = []
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
         isSerp = False
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
-            result = search_places(search_query, userId, tripId)
-
+            result, geo_coordinates = search_places(search_query, userId, tripId)
             isSerp = True
 
         elif function_name == "search_place_details":
@@ -219,7 +219,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
     # 대화 메모리에 응답 추가
     memory.save_context({"input": query}, {"output": result})
 
-    return {"result" : result, "isSerp": isSerp}
+    return {"result" : result, "geo_coordinates": geo_coordinates, "isSerp": isSerp}
 
 
 def search_places(query: str, userId, tripId):
@@ -313,8 +313,7 @@ def search_places(query: str, userId, tripId):
     document = {
         "userId": userId,
         "tripId": tripId,
-        "data": sorted_parsed_results,
-        "isSerp": True
+        "data": sorted_parsed_results
     }
 
     serp_collection.update_one(
@@ -325,15 +324,16 @@ def search_places(query: str, userId, tripId):
 
     # 정렬된 결과를 포맷팅하여 반환
     final_formatted_results = []
+    geo_coordinates = []
     for idx, place in enumerate(sorted_parsed_results, 1):
-        formatted_place = f"{idx}. 장소 이름: {place['title']}\n    별점: {place['rating']}\n    주소: {place['address']}\n    설명: {place['description']}\n"
+        formatted_place = f"*{idx}. 장소 이름: {place['title']}\n    별점: {place['rating']}\n    주소: {place['address']}\n    설명: {place['description']}\n"
         if place['price']:
             formatted_place += f"    가격: {place['price']}\n"
         final_formatted_results.append(formatted_place)
-
-
+        geo_coordinates.append((place['latitude'], place['longitude']))
+    resultFormatted = '\n'.join(final_formatted_results)
     # 최종 문자열로 결합하여 반환
-    return '\n'.join(final_formatted_results)
+    return resultFormatted, geo_coordinates
 
 def just_chat(query: str):
     response = openai.ChatCompletion.create(
