@@ -35,7 +35,6 @@ def message_to_dict(msg: BaseMessage):
         raise ValueError(f"Unknown message type: {type(msg)}")
 
 def call_openai_function(query: str, userId: str, tripId: str):
-    
     memory.save_context({"input": query}, {"output": ""})
     print(memory)
     
@@ -90,13 +89,13 @@ def call_openai_function(query: str, userId: str, tripId: str):
             },
             {
                 "name": "save_place",
-                "description": "query에서 숫자만 추출해 SerpData의 mongoDB데이터를 가져와 SavePlace mongoDB에 저장",
+                "description": "사용자의 query에서 숫자가 있다면 숫자를 추출하여 SerpData의 MongoDB 데이터를 SavePlace MongoDB에 저장합니다. 사용자가 숫자와 함께, 또는 숫자 없이 '저장', '추가', '갈래' 등의 다양한 표현으로 저장을 요청할 수 있습니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "사용자가 숫자와 함께 저장,추가해줘 혹은 갈래 라는 쿼리를 입력했을 시에 실행"
+                            "description": "사용자가 숫자와 함께 또는 숫자 없이 저장 또는 추가를 요청하는 다양한 표현의 쿼리 문자열"
                         }
                     },
                     "required": ["query"]
@@ -164,25 +163,23 @@ def call_openai_function(query: str, userId: str, tripId: str):
         function_name = function_call["name"]
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
+        
         isSerp = False
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
             result = search_places(search_query, userId, tripId)
-
             isSerp = True
-
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
             result = search_place_details(search_query, userId, tripId)
-
         elif function_name == "just_chat":
             args = json.loads(function_call["arguments"])
             result = just_chat(args["query"])
         elif function_name == "save_place":
             args = json.loads(function_call["arguments"])
-            result = extractNumbers(args["query"], userId, tripId)
+            result = savePlace(args["query"], userId, tripId)
         elif function_name == "save_plan":
             args = json.loads(function_call["arguments"])
             result = savePlans(userId, tripId)
@@ -259,6 +256,7 @@ def search_places(query: str, userId, tripId):
     parsed_results = []
     serp_collection = db['SerpData']
     translator = GoogleTranslator(source='en', target='ko')
+    
     # 결과 파싱
     for result in data['local_results']:
         title = result.get('title')
@@ -314,7 +312,6 @@ def search_places(query: str, userId, tripId):
         "userId": userId,
         "tripId": tripId,
         "data": sorted_parsed_results,
-        "isSerp": True
     }
 
     serp_collection.update_one(
@@ -345,34 +342,47 @@ def just_chat(query: str):
     )
     return response.choices[0].message["content"]
 
-def extractNumbers(text, userId, tripId):
-    numbers = re.findall(r'\d+', text)
-    indexes = [int(number) for number in numbers]
+def savePlace(query, userId, tripId):
+    try:
+        serp_collection = db['SerpData']
+        save_place_collection = db['SavePlace']
+        
+        document = serp_collection.find_one({"userId": userId, "tripId": tripId})
+        
+        if not document or 'data' not in document:
+            return "No data found for the given userId and tripId."
+        
+        if re.search(r'\d+', query):
+            numbers = re.findall(r'\d+', query)
+            indexes = [int(number) for number in numbers]
 
-    return saveSelectedPlace(userId, tripId, indexes)
+            serp_data_length = len(document['data'])
+            valid_indexes = [index-1 for index in indexes if 0 <= index-1 < serp_data_length]
+            
+            if not valid_indexes:
+                return "No valid indexes found."
+        
+            selected_places = [document['data'][index] for index in valid_indexes]
 
-def saveSelectedPlace(userId, tripId, indexes):
-    serp_collection = db['SerpData']
-    save_place_collection = db['SavePlace']
-    
-    document = serp_collection.find_one({"userId": userId, "tripId": tripId})
-    
-    serp_data_length = len(document['data'])
-    valid_indexes = [index-1 for index in indexes if 0 <= index-1 < serp_data_length]
-    
-    if not valid_indexes:
-        print("No valid indexes found.")
-        return
-    
-    selected_places = [document['data'][index] for index in valid_indexes]
-    
-    save_place_collection.update_one(
-        {"userId": userId, "tripId": tripId},
-        {"$push": {"placeData": {"$each": selected_places}}},
-        upsert=True
-    )
-    
-    return selected_places
+        else:
+            selected_places = [document['data']]
+        
+        save_place_collection.update_one(
+            {"userId": userId, "tripId": tripId},
+            {"$push": {"placeData": {"$each": selected_places}}},
+            upsert=True
+        )
+        
+        # 저장된 장소의 제목을 추출
+        saved_titles = [place["title"] for place in selected_places]
+        
+        # 장소 제목을 포함한 응답 메시지 생성
+        response_message = f"네, 알겠습니다! {', '.join(saved_titles)}이 저장되었습니다🥳"
+
+        return response_message
+
+    except Exception as e:
+        return json.dumps({"result_code": 500, "message": str(e)})
 
 def savePlans(userId, tripId):
     session = sqldb.sessionmaker()
@@ -582,7 +592,7 @@ def search_place_details(query: str, userId, tripId):
     price = result.get('price', None)
 
     if not address or not latitude or not longitude:
-        return "유효한 장소 정보를 찾을 수 없습니다."
+        return "입력하신 장소를 찾을 수 없습니다😱\n정확한 장소명으로 다시 입력해주세요!"
         
     place_data = {
         "title": title,
@@ -600,7 +610,7 @@ def search_place_details(query: str, userId, tripId):
     if price:
         formatted_result += f"    가격: {price}\n"
     
-    formatted_result += "입력하신 장소가 맞나요? 맞으면 저장해드릴게요!"
+    formatted_result += "\n이곳이 입력하신 장소가 맞나요?\n저장하고 싶으시면 '저장할게'라고 말씀해주세요😊"
     
     document = {
         "userId": userId,
