@@ -171,8 +171,8 @@ def call_openai_function(query: str, userId: str, tripId: str):
             search_query = args["query"]
 
             result, geo_coordinates = search_places(search_query, userId, tripId)
-
             isSerp = True
+
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -316,7 +316,6 @@ def search_places(query: str, userId, tripId):
         "userId": userId,
         "tripId": tripId,
         "data": sorted_parsed_results
-
     }
 
     serp_collection.update_one(
