@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, Column, String, INT, FLOAT, LargeBinary, JSON
 import google.generativeai as genai
 from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY, SERP_API_KEY,db
-from models.models import myTrips, tripPlans
+from models.models import myTrips, tripPlans, user
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
 from typing import Optional
@@ -118,13 +118,13 @@ def call_openai_function(query: str, userId: str, tripId: str):
             },
             {
                 "name": "update_trip_plan",
-                "description": "Update a trip plan with the given details",
+                "description": "Update a trip plan with the given details, 질문자가 한국어로 물어보니까 한국어로 return값을 줘",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "userId": {"type": "string", "description": "내가 입력한 uuid를 기준으로 해줘."},
                         "tripId": {"type": "string", "description": "내가 입력한 uuid를 기준으로 해줘."},
-                        "date": {"type": "string", "description": "Date of the tripPlans"},
+                        "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
                         "newTitle": {"type": "string", "description": "New title for the trip plan"},
                         "newDate": {"type": "string", "description": "New date for the trip plan"},
@@ -162,18 +162,21 @@ def call_openai_function(query: str, userId: str, tripId: str):
     try:
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
-        
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
-
+        isSerp = False
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
             result = search_places(search_query, userId, tripId)
+
+            isSerp = True
+
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
             result = search_place_details(search_query, userId, tripId)
+
         elif function_name == "just_chat":
             args = json.loads(function_call["arguments"])
             result = just_chat(args["query"])
@@ -216,10 +219,12 @@ def call_openai_function(query: str, userId: str, tripId: str):
     # 대화 메모리에 응답 추가
     memory.save_context({"input": query}, {"output": result})
 
-    return result
+    return {"result" : result, "isSerp": isSerp}
 
 
 def search_places(query: str, userId, tripId):
+    # Google Search API를 사용하여 장소 검색
+    print(query)
     params = {
         "engine": "google_maps",
         "q": query,
@@ -228,13 +233,34 @@ def search_places(query: str, userId, tripId):
     }
     search = GoogleSearch(params)
     data = search.get_dict()
+    # 사용자의 성향 데이터를 가져와서 변환
+    session = sqldb.sessionmaker()
+    user_data = session.query(user).filter(user.userId == userId).first().personality
+    session.close()
+    mypersonality = json.loads(user_data)
     
-    translator = GoogleTranslator(source='en', target='ko')
+    personality_dict = {
+        "money1": "이왕 여행을 간 김에 가격이 비싸고 좋은 곳으로 알려줘",
+        "money2": "여행 경비를 아껴야해 가격이 저렴한 곳으로 알려줘",
+        "food1": "맛집 웨이팅 기다릴 수 있어 평점이 높은 곳 위주로",
+        "food2": "그냥 끌리는대로 다닐래 평점 낮아도 상관 없어",
+        "transport1": "경도 위도가 가까운 곳으로 알려줘",
+        "transport2": "좀 멀어도 괜찮아",
+        "schedule1": "즐기면서 천천히 다니고 싶어",
+        "schedule2": "일정 알차게 돌아다니고 싶어",
+        "photo1": "사진은 중요하지 않아",
+        "photo2": "포토스팟 위주로 알려줘"
+    }
+
+    personality_query = "사용자의 성향: "
+    for key, value in mypersonality.items():
+        personality_query += personality_dict[value] + " "
+    
     parsed_results = []
-    formatted_results = []
     serp_collection = db['SerpData']
-    
-    for idx, result in enumerate(data['local_results'], 1):
+    translator = GoogleTranslator(source='en', target='ko')
+    # 결과 파싱
+    for result in data['local_results']:
         title = result.get('title')
         rating = result.get('rating')
         address = result.get('address')
@@ -242,36 +268,52 @@ def search_places(query: str, userId, tripId):
         latitude = gps_coordinates.get('latitude')
         longitude = gps_coordinates.get('longitude')
         description = result.get('description', 'No description available.')
-        translated_description = translator.translate(description)
+        # translated_description = translator.translate(description)
         price = result.get('price', None)
 
         if not address or not latitude or not longitude:
             continue
-        
+
         place_data = {
             "title": title,
             "rating": rating,
             "address": address,
             "latitude": latitude,
             "longitude": longitude,
-            "description": translated_description,
+            "description": description,
             "price": price,
             "date": None,
             "time": None
         }
         
         parsed_results.append(place_data)
-        
-        formatted_place = f"{idx}. 장소 이름: {title}\n    별점: {rating}\n    주소: {address}\n    설명: {translated_description}\n"
-        if price:
-            formatted_place += f"    가격: {price}\n"
-        
-        formatted_results.append(formatted_place)
-        
+    # Gemini API를 사용하여 정렬
+    genai.configure(api_key=GEMINI_API_KEY)
+    prompt = (personality_query + "\n"
+              "장소 목록:\n" +
+              '\n'.join([f"{i+1}. 장소 이름: {place['title']}\n    별점: {place['rating']}\n    주소: {place['address']}\n    설명: {place['description']}\n    가격: {place.get('price', '없음')}\n" 
+                         for i, place in enumerate(parsed_results)]) + "\n"
+              "위 성향에 맞게 장소 목록을 재정렬해주세요. 해당 성향에 적합한 장소를 먼저 정렬해주세요 모든 장소를 사용해야하고 중복되지 않게 해주세요 이 장소 말고 다른 장소는 추가해서 안돼")
+    
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    response = model.generate_content(prompt).text
+    
+    # 응답에서 정렬된 장소 목록 추출
+    sorted_results = response.strip().split('\n')
+    
+    # parsed_results를 sorted_results 순서에 맞게 정렬
+    sorted_parsed_results = []
+    for result in sorted_results:
+        for place in parsed_results:
+            if place['title'] in result:
+                sorted_parsed_results.append(place)
+                break
+    
+    # 정렬된 결과를 MongoDB에 저장
     document = {
         "userId": userId,
         "tripId": tripId,
-        "data": parsed_results,
+        "data": sorted_parsed_results,
         "isSerp": True
     }
 
@@ -281,10 +323,17 @@ def search_places(query: str, userId, tripId):
         upsert=True
     )
 
-    # 모든 장소 정보를 하나의 큰 문자열로 결합
-    formatted_results_str = "\n".join(formatted_results)
+    # 정렬된 결과를 포맷팅하여 반환
+    final_formatted_results = []
+    for idx, place in enumerate(sorted_parsed_results, 1):
+        formatted_place = f"{idx}. 장소 이름: {place['title']}\n    별점: {place['rating']}\n    주소: {place['address']}\n    설명: {place['description']}\n"
+        if place['price']:
+            formatted_place += f"    가격: {place['price']}\n"
+        final_formatted_results.append(formatted_place)
 
-    return formatted_results_str
+
+    # 최종 문자열로 결합하여 반환
+    return '\n'.join(final_formatted_results)
 
 def just_chat(query: str):
     response = openai.ChatCompletion.create(
