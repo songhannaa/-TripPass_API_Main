@@ -15,6 +15,8 @@ from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY,
 from models.models import myTrips, tripPlans, user
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
+from langchain.embeddings import OpenAIEmbeddings
+from sklearn.metrics.pairwise import cosine_similarity
 from typing import Optional
 import datetime
 
@@ -23,6 +25,10 @@ if 'memory' not in globals():
     memory = ConversationBufferMemory()
 
 pending_updates = {}
+
+def get_embedding(text):
+    response = openai.Embedding.create(input=text, model="text-embedding-ada-002")
+    return response['data'][0]['embedding']
 
 def message_to_dict(msg: BaseMessage):
 
@@ -125,7 +131,9 @@ def call_openai_function(query: str, userId: str, tripId: str):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "userId": {"type": "string", "description": "with the given details"},
+
+                        "userId": {"type": "string", "description": "with the given details."},
+
                         "tripId": {"type": "string", "description": "with the given details."},
                         "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
@@ -166,9 +174,10 @@ def call_openai_function(query: str, userId: str, tripId: str):
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
 
+        
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
- 
+
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -475,6 +484,11 @@ def get_plan_details(userId: str, tripId: str, date: str, title: str):
                 "description": plan.description
             }
 
+            # 임베딩 생성
+            plan_text = f"{plan.title} {plan.date} {plan.time} {plan.place} {plan.address} {plan.description}"
+            plan_embedding = get_embedding(plan_text)
+            print(f"Plan embedding: {plan_embedding}")
+
             confirmation_message = (
                 f"해당 일정을 다음과 같이 수정하시겠습니까?\n\n"
                 f"[현재 일정]\n"
@@ -486,7 +500,7 @@ def get_plan_details(userId: str, tripId: str, date: str, title: str):
                 f"수정하려면 '확인'을 입력해주세요."
             )
 
-            return original_plan, confirmation_message
+            return original_plan, confirmation_message, plan_embedding
         else:
             return None, "일정을 찾을 수 없습니다.(get_plan_detail)"
     except Exception as e:
@@ -494,8 +508,6 @@ def get_plan_details(userId: str, tripId: str, date: str, title: str):
     finally:
         session.close()
 
-
-#지영
 def update_trip_plan_confirmed(userId: str):
     if userId not in pending_updates:
         return "No pending update found for the user."
@@ -514,7 +526,6 @@ def update_trip_plan_confirmed(userId: str):
     del pending_updates[userId]
     return result
 
-#지영
 def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTitle: str, newDate: str, newTime: str):
     session = sqldb.sessionmaker()
     try:
