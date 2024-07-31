@@ -36,8 +36,9 @@ def message_to_dict(msg: BaseMessage):
         raise ValueError(f"Unknown message type: {type(msg)}")
 
 def call_openai_function(query: str, userId: str, tripId: str):
-    geo_coordinates = []
+
     isSerp = False
+    geo_coordinates = []
 
     memory.save_context({"input": query}, {"output": ""})
     print(memory)
@@ -47,7 +48,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
     ] + [message_to_dict(msg) for msg in memory.chat_memory.messages] + [
         {"role": "user", "content": query}
     ]
-    
     response = openai.ChatCompletion.create(
 
         model="gpt-4o",
@@ -125,8 +125,8 @@ def call_openai_function(query: str, userId: str, tripId: str):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "userId": {"type": "string", "description": "내가 입력한 uuid를 기준으로 해줘."},
-                        "tripId": {"type": "string", "description": "내가 입력한 uuid를 기준으로 해줘."},
+                        "userId": {"type": "string", "description": "with the given details"},
+                        "tripId": {"type": "string", "description": "with the given details."},
                         "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
                         "newTitle": {"type": "string", "description": "New title for the trip plan"},
@@ -166,11 +166,9 @@ def call_openai_function(query: str, userId: str, tripId: str):
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
 
-        
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
-        
-
+ 
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -275,7 +273,7 @@ def search_places(query: str, userId, tripId):
         latitude = gps_coordinates.get('latitude')
         longitude = gps_coordinates.get('longitude')
         description = result.get('description', 'No description available.')
-        # translated_description = translator.translate(description)
+        translated_description = translator.translate(description)
         price = result.get('price', None)
 
         if not address or not latitude or not longitude:
@@ -287,7 +285,7 @@ def search_places(query: str, userId, tripId):
             "address": address,
             "latitude": latitude,
             "longitude": longitude,
-            "description": description,
+            "description": translated_description,
             "price": price,
             "date": None,
             "time": None
