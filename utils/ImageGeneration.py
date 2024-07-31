@@ -9,8 +9,8 @@ def imageGeneration(contry, city, OPENAI_API_KEY):
     openai.api_key = OPENAI_API_KEY
     
     # 영어로 번역
-    text = f'{contry} {city}'
-    result = city = GoogleTranslator(source='ko', target='en').translate(text)
+    text = f'A beautiful travel photo of {city}, {contry}.'
+    result = GoogleTranslator(source='ko', target='en').translate(text)
     
     # 이미지 생성
     response = openai.Image.create(
