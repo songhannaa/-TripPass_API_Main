@@ -25,6 +25,7 @@ if 'memory' not in globals():
 pending_updates = {}
 
 def message_to_dict(msg: BaseMessage):
+
     if isinstance(msg, HumanMessage):
         return {"role": "user", "content": msg.content}
     elif isinstance(msg, AIMessage):
@@ -37,10 +38,9 @@ def message_to_dict(msg: BaseMessage):
 def call_openai_function(query: str, userId: str, tripId: str):
     geo_coordinates = []
     isSerp = False
-    
+
     memory.save_context({"input": query}, {"output": ""})
     print(memory)
-    
     # 메시지를 적절한 형식으로 변환
     messages = [
         {"role": "system", "content": "You are a helpful assistant that helps users plan their travel plans."},
@@ -49,6 +49,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
     ]
     
     response = openai.ChatCompletion.create(
+
         model="gpt-4o",
 
         messages=messages,
@@ -164,10 +165,12 @@ def call_openai_function(query: str, userId: str, tripId: str):
     try:
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
+
         
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
         
+
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -341,7 +344,9 @@ def search_places(query: str, userId, tripId):
 
 def just_chat(query: str):
     response = openai.ChatCompletion.create(
+
         model="gpt-4o",
+
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": query}
