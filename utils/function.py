@@ -31,6 +31,7 @@ def get_embedding(text):
     return response['data'][0]['embedding']
 
 def message_to_dict(msg: BaseMessage):
+
     if isinstance(msg, HumanMessage):
         return {"role": "user", "content": msg.content}
     elif isinstance(msg, AIMessage):
@@ -41,11 +42,12 @@ def message_to_dict(msg: BaseMessage):
         raise ValueError(f"Unknown message type: {type(msg)}")
 
 def call_openai_function(query: str, userId: str, tripId: str):
+
     isSerp = False
     geo_coordinates = []
+
     memory.save_context({"input": query}, {"output": ""})
     print(memory)
-    
     # 메시지를 적절한 형식으로 변환
     messages = [
         {"role": "system", "content": "You are a helpful assistant that helps users plan their travel plans."},
@@ -53,6 +55,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
         {"role": "user", "content": query}
     ]
     response = openai.ChatCompletion.create(
+
         model="gpt-4o",
 
         messages=messages,
@@ -128,7 +131,9 @@ def call_openai_function(query: str, userId: str, tripId: str):
                 "parameters": {
                     "type": "object",
                     "properties": {
+
                         "userId": {"type": "string", "description": "with the given details."},
+
                         "tripId": {"type": "string", "description": "with the given details."},
                         "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
@@ -168,10 +173,11 @@ def call_openai_function(query: str, userId: str, tripId: str):
     try:
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
+
         
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
-        
+
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -182,7 +188,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
-            result = search_place_details(search_query, userId, tripId)
+            result, geo_coordinates = search_place_details(search_query, userId, tripId)
             isSerp = True
         elif function_name == "just_chat":
             args = json.loads(function_call["arguments"])
@@ -276,7 +282,7 @@ def search_places(query: str, userId, tripId):
         latitude = gps_coordinates.get('latitude')
         longitude = gps_coordinates.get('longitude')
         description = result.get('description', 'No description available.')
-        # translated_description = translator.translate(description)
+        translated_description = translator.translate(description)
         price = result.get('price', None)
 
         if not address or not latitude or not longitude:
@@ -288,7 +294,7 @@ def search_places(query: str, userId, tripId):
             "address": address,
             "latitude": latitude,
             "longitude": longitude,
-            "description": description,
+            "description": translated_description,
             "price": price,
             "date": None,
             "time": None
@@ -345,7 +351,9 @@ def search_places(query: str, userId, tripId):
 
 def just_chat(query: str):
     response = openai.ChatCompletion.create(
+
         model="gpt-4o",
+
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": query}
@@ -606,7 +614,9 @@ def search_place_details(query: str, userId, tripId):
 
     if not address or not latitude or not longitude:
         return "입력하신 장소를 찾을 수 없습니다😱\n정확한 장소명으로 다시 입력해주세요!"
-        
+    
+    geo_coordinates = [(latitude, longitude)]
+    
     place_data = {
         "title": title,
         "rating": rating,
@@ -637,4 +647,4 @@ def search_place_details(query: str, userId, tripId):
         upsert=True
     )
 
-    return formatted_result
+    return formatted_result, geo_coordinates
