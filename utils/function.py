@@ -4,19 +4,18 @@ import openai
 from serpapi import GoogleSearch
 from deep_translator import GoogleTranslator
 from sqlalchemy.ext.declarative import declarative_base
-from pymongo import MongoClient
 import re
 import uuid
 from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, Column, String, INT, FLOAT, LargeBinary, JSON
 import google.generativeai as genai
-from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY, SERP_API_KEY,db
+from database import sqldb, OPENAI_API_KEY, GEMINI_API_KEY, SERP_API_KEY,db
 from models.models import myTrips, tripPlans, user
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
 from typing import Optional
 import datetime
+from utils.openaiMemo import openaiPlanMemo
 
 # ConversationBufferMemory 초기화
 if 'memory' not in globals():
@@ -436,7 +435,15 @@ def savePlans(userId, tripId):
             description=data['description']
         )
         session.add(new_trip)
+    
+    session.commit()
 
+    # 저장한 계획들로 ai가 계획 별 메모 만들어주
+    places = [data['place'] for data in datas]
+    ai_memo = openaiPlanMemo(places, GEMINI_API_KEY)
+
+    mytrip = session.query(myTrips).filter(myTrips.tripId == tripId).first()
+    mytrip.memo = ai_memo
     session.commit()
 
     save_place_collection.delete_one({"userId": userId, "tripId": tripId})
