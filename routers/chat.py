@@ -21,6 +21,7 @@ class QuestionRequest(BaseModel):
     sender: str
     message: str
     isSerp: Optional[bool] = None
+    function_name: Optional[str] = None
 
 # ObjectId를 문자열로 변환하는 헬퍼 함수
 def convert_objectid_to_str(doc):
@@ -36,6 +37,7 @@ async def getWelcomeMessage(
     userId: str = Query(...), 
     tripId: str = Query(...),
     session: Session = Depends(sqldb.sessionmaker)):
+    memory.clear()
     try:
         # 여행 정보와 사용자 정보 가져오기
         trip_info = session.query(myTrips).filter(myTrips.tripId == tripId).first()
@@ -187,8 +189,20 @@ async def updateTripPlan(
 async def call_openai_function_endpoint(request: QuestionRequest):
     try:
         response = call_openai_function(request.message, request.userId, request.tripId)
-        return {"result_code": 200, "response": response["result"], "geo": response.get("geo_coordinates"), "isSerp": response.get("isSerp")}
+        return {"result_code": 200, 
+                "response": response["result"], 
+                "geo": response.get("geo_coordinates"), 
+                "isSerp": response.get("isSerp"),
+                "function_name": response.get("function_name")}
     except ValidationError as e:
         return {"result_code": 422, "response": f"Validation error: {str(e)}"}
+    except Exception as e:
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
+
+@router.post(path='/clearMemory', description="메모리 초기화")
+async def clear_memory_endpoint():
+    try:
+        memory.clear()
+        return {"result_code": 200, "response": "Memory has been cleared."}
     except Exception as e:
         return {"result_code": 400, "response": f"Error: {str(e)}"}

@@ -36,24 +36,21 @@ def message_to_dict(msg: BaseMessage):
         raise ValueError(f"Unknown message type: {type(msg)}")
 
 def call_openai_function(query: str, userId: str, tripId: str):
-
     isSerp = False
     geo_coordinates = []
+    function_name = None
 
     memory.save_context({"input": query}, {"output": ""})
-    print(memory)
-    # 메시지를 적절한 형식으로 변환
+    print(memory.chat_memory)
+    
     messages = [
         {"role": "system", "content": "You are a helpful assistant that helps users plan their travel plans."},
     ] + [message_to_dict(msg) for msg in memory.chat_memory.messages] + [
         {"role": "user", "content": query}
     ]
     response = openai.ChatCompletion.create(
-
         model="gpt-4o",
-
         messages=messages,
-
         functions=[
             {
                 "name": "search_places",
@@ -113,7 +110,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "사용자가 여행 일정을 만들어줘 혹은 이정도면 충분해 이제 저장할래 이런 말을 했을 때에 실행"
+                            "description": "사용자가 여행 계획 짜줘, 여행 일정 만들어줘, 최종 일정 만들어줘, 그걸로 일정 짜줘 등 여행 관련 일정을 만들어달라는 요청하는 모든 말을 했을 때 실행"
                         }
                     },
                     "required": ["query"]
@@ -223,7 +220,10 @@ def call_openai_function(query: str, userId: str, tripId: str):
     # 대화 메모리에 응답 추가
     memory.save_context({"input": query}, {"output": result})
 
-    return {"result" : result, "geo_coordinates": geo_coordinates, "isSerp": isSerp}
+    return {"result" : result, 
+            "geo_coordinates": geo_coordinates, 
+            "isSerp": isSerp, 
+            "function_name": function_name}
 
 
 def search_places(query: str, userId, tripId):
@@ -290,8 +290,8 @@ def search_places(query: str, userId, tripId):
             "date": None,
             "time": None
         }
-        
         parsed_results.append(place_data)
+
     # Gemini API를 사용하여 정렬
     genai.configure(api_key=GEMINI_API_KEY)
     prompt = (personality_query + "\n"
@@ -387,12 +387,12 @@ def savePlace(query, userId, tripId):
         saved_titles = [place["title"] for place in selected_places]
         
         # 장소 제목을 포함한 응답 메시지 생성
-        response_message = f"네, 알겠습니다! {', '.join(saved_titles)}이 저장되었습니다🥳"
+        response_message = f"네, 알겠습니다! {', '.join(saved_titles)}이 저장되었습니다🥳\n\n저장하신 목적지로 최종적인 여행 계획을 원하시면 '여행 일정 만들어줘'라고 말씀해 주세요!"
 
         return response_message
 
     except Exception as e:
-        return json.dumps({"result_code": 500, "message": str(e)})
+        return "잠시 오류가 있었어요😭 다시 한번 말해주세요!"
 
 def savePlans(userId, tripId):
     session = sqldb.sessionmaker()
@@ -403,8 +403,8 @@ def savePlans(userId, tripId):
     save_place_collection = db['SavePlace']
     document = save_place_collection.find_one({"userId": userId, "tripId": tripId})
     if not document:
-        print("SavePlace에서 일치하는 문서를 찾을 수 없습니다.")
-        return []
+        response = "아직 저장하신 장소들이 없어요🤔\n제가 추천해드리는 장소를 저장하시거나 가고 싶은 장소를 직접 입력해보세요!"
+        return response
     place_data = document['placeData']
     place_data_str = json.dumps(place_data, ensure_ascii=False)
     model = genai.GenerativeModel('gemini-1.5-flash')
@@ -445,7 +445,7 @@ def savePlans(userId, tripId):
     query = f"""
     {cleaned_string}이걸 상세하게 설명해서 답변해줘 챗봇이 일정을 만들어준 것처럼 예를 들어 바르셀로나 여행 일정을 완성했어요! 1일차 - 이런식으로
     """
-    response = model.generate_content(query).text
+    response = model.generate_content(query).text.replace('*', '')
 
     return response
 
@@ -588,6 +588,10 @@ def search_place_details(query: str, userId, tripId):
     
     translator = GoogleTranslator(source='en', target='ko')
     result = data.get('place_results', {})
+    
+    # place_results가 비어 있을 경우 처리
+    if not result:
+        return "입력하신 장소를 찾을 수 없습니다😱\n정확한 장소명으로 다시 입력해주세요!", []
     
     serp_collection = db['SerpData']
     
