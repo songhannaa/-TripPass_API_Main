@@ -405,6 +405,25 @@ def savePlace(query, userId, tripId):
 
 def savePlans(userId, tripId):
     session = sqldb.sessionmaker()
+    # 사용자 성향 데이터 가져오기
+    user_data = session.query(user).filter(user.userId == userId).first().personality
+    personality = json.loads(user_data)
+    
+    transport_preference = personality.get("transport", "")
+    schedule_preference = personality.get("schedule", "")
+
+    # 성향에 따른 설명 매핑
+    personality_dict = {
+        "transport1": "관광지들끼리 경도 위도가 가까운 곳으로 알려줘",
+        "transport2": "관광지들끼리 경도 위도가 좀 멀어도 괜찮아",
+        "schedule1": "여행 스케줄을 즐기면서 천천히 다니고 싶어",
+        "schedule2": "여행 스케줄 일정 알차게 돌아다니고 싶어"
+    }
+
+    # 사용자의 성향에 따른 query 구성
+    personality_query = f"사용자의 성향은 {personality_dict.get(transport_preference, '')}, {personality_dict.get(schedule_preference, '')}"
+    print(personality_query)
+
     mytrip = session.query(myTrips).filter(myTrips.tripId == tripId).first()
     startDate = mytrip.startDate
     endDate = mytrip.endDate
@@ -418,10 +437,10 @@ def savePlans(userId, tripId):
     place_data_str = json.dumps(place_data, ensure_ascii=False)
     model = genai.GenerativeModel('gemini-1.5-flash')
     query = f"""
-    {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 각 날에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 경도와 위도가 가까운 장소들을 하루 일정에 적당히 넣어줘, 하루에 너무 많은 장소를 넣지는 말아줘 적당히 배분해 같은 장소는 일정을 여러번 넣지 않게 해줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
-    시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 만약에 데이터가 부족해서 전체 일정을 다 채우지 못한다 해도 괜찮아 그럼 그냥 아예 리턴을 하지마
+    {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 모든 날짜에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 {personality_query} 니까 사용자의 성향에 맞춰서 짜줘. 같은 장소는 여러 일정을 만들지는 말아줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
+    시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
     일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description]. 의 json배열로 뽑아줘
-    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘
+    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 장소가 부족하다고 날짜를 비워놓지는 말아줘 최대한 너가 분배해서 만들어 내가 준 장소를 사용해서
     """
     response = model.generate_content(query)
 
