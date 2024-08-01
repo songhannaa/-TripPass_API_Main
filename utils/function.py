@@ -4,25 +4,30 @@ import openai
 from serpapi import GoogleSearch
 from deep_translator import GoogleTranslator
 from sqlalchemy.ext.declarative import declarative_base
-from pymongo import MongoClient
 import re
 import uuid
 from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, Column, String, INT, FLOAT, LargeBinary, JSON
 import google.generativeai as genai
-from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY, SERP_API_KEY,db
+from database import sqldb, OPENAI_API_KEY, GEMINI_API_KEY, SERP_API_KEY,db
 from models.models import myTrips, tripPlans, user
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
+from langchain.embeddings import OpenAIEmbeddings
+from sklearn.metrics.pairwise import cosine_similarity
 from typing import Optional
 import datetime
+from utils.openaiMemo import openaiPlanMemo
 
 # ConversationBufferMemory 초기화
 if 'memory' not in globals():
     memory = ConversationBufferMemory()
 
 pending_updates = {}
+
+def get_embedding(text):
+    response = openai.Embedding.create(input=text, model="text-embedding-ada-002")
+    return response['data'][0]['embedding']
 
 def message_to_dict(msg: BaseMessage):
 
@@ -125,7 +130,9 @@ def call_openai_function(query: str, userId: str, tripId: str):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "userId": {"type": "string", "description": "with the given details"},
+
+                        "userId": {"type": "string", "description": "with the given details."},
+
                         "tripId": {"type": "string", "description": "with the given details."},
                         "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
@@ -166,9 +173,10 @@ def call_openai_function(query: str, userId: str, tripId: str):
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
 
+        
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
- 
+
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -396,6 +404,25 @@ def savePlace(query, userId, tripId):
 
 def savePlans(userId, tripId):
     session = sqldb.sessionmaker()
+    # 사용자 성향 데이터 가져오기
+    user_data = session.query(user).filter(user.userId == userId).first().personality
+    personality = json.loads(user_data)
+    
+    transport_preference = personality.get("transport", "")
+    schedule_preference = personality.get("schedule", "")
+
+    # 성향에 따른 설명 매핑
+    personality_dict = {
+        "transport1": "관광지들끼리 경도 위도가 가까운 곳으로 알려줘",
+        "transport2": "관광지들끼리 경도 위도가 좀 멀어도 괜찮아",
+        "schedule1": "여행 스케줄을 즐기면서 천천히 다니고 싶어",
+        "schedule2": "여행 스케줄 일정 알차게 돌아다니고 싶어"
+    }
+
+    # 사용자의 성향에 따른 query 구성
+    personality_query = f"사용자의 성향은 {personality_dict.get(transport_preference, '')}, {personality_dict.get(schedule_preference, '')}"
+    print(personality_query)
+
     mytrip = session.query(myTrips).filter(myTrips.tripId == tripId).first()
     startDate = mytrip.startDate
     endDate = mytrip.endDate
@@ -409,10 +436,10 @@ def savePlans(userId, tripId):
     place_data_str = json.dumps(place_data, ensure_ascii=False)
     model = genai.GenerativeModel('gemini-1.5-flash')
     query = f"""
-    {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 각 날에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 경도와 위도가 가까운 장소들을 하루 일정에 적당히 넣어줘, 하루에 너무 많은 장소를 넣지는 말아줘 적당히 배분해 같은 장소는 일정을 여러번 넣지 않게 해줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
-    시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 만약에 데이터가 부족해서 전체 일정을 다 채우지 못한다 해도 괜찮아 그럼 그냥 아예 리턴을 하지마
+    {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 모든 날짜에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 {personality_query} 니까 사용자의 성향에 맞춰서 짜줘. 같은 장소는 여러 일정을 만들지는 말아줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
+    시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
     일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description]. 의 json배열로 뽑아줘
-    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘
+    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 장소가 부족하다고 날짜를 비워놓지는 말아줘 최대한 너가 분배해서 만들어 내가 준 장소를 사용해서
     """
     response = model.generate_content(query)
 
@@ -436,7 +463,15 @@ def savePlans(userId, tripId):
             description=data['description']
         )
         session.add(new_trip)
+    
+    session.commit()
 
+    # 저장한 계획들로 ai가 계획 별 메모 만들어주
+    places = [data['place'] for data in datas]
+    ai_memo = openaiPlanMemo(places, GEMINI_API_KEY)
+
+    mytrip = session.query(myTrips).filter(myTrips.tripId == tripId).first()
+    mytrip.memo = ai_memo
     session.commit()
 
     save_place_collection.delete_one({"userId": userId, "tripId": tripId})
@@ -475,6 +510,11 @@ def get_plan_details(userId: str, tripId: str, date: str, title: str):
                 "description": plan.description
             }
 
+            # 임베딩 생성
+            plan_text = f"{plan.title} {plan.date} {plan.time} {plan.place} {plan.address} {plan.description}"
+            plan_embedding = get_embedding(plan_text)
+            print(f"Plan embedding: {plan_embedding}")
+
             confirmation_message = (
                 f"해당 일정을 다음과 같이 수정하시겠습니까?\n\n"
                 f"[현재 일정]\n"
@@ -486,7 +526,7 @@ def get_plan_details(userId: str, tripId: str, date: str, title: str):
                 f"수정하려면 '확인'을 입력해주세요."
             )
 
-            return original_plan, confirmation_message
+            return original_plan, confirmation_message, plan_embedding
         else:
             return None, "일정을 찾을 수 없습니다.(get_plan_detail)"
     except Exception as e:
@@ -494,8 +534,6 @@ def get_plan_details(userId: str, tripId: str, date: str, title: str):
     finally:
         session.close()
 
-
-#지영
 def update_trip_plan_confirmed(userId: str):
     if userId not in pending_updates:
         return "No pending update found for the user."
@@ -514,7 +552,6 @@ def update_trip_plan_confirmed(userId: str):
     del pending_updates[userId]
     return result
 
-#지영
 def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTitle: str, newDate: str, newTime: str):
     session = sqldb.sessionmaker()
     try:
