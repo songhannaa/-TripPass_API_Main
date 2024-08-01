@@ -37,7 +37,6 @@ async def getWelcomeMessage(
     userId: str = Query(...), 
     tripId: str = Query(...),
     session: Session = Depends(sqldb.sessionmaker)):
-    memory.clear()
     try:
         # 여행 정보와 사용자 정보 가져오기
         trip_info = session.query(myTrips).filter(myTrips.tripId == tripId).first()
