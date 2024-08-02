@@ -411,7 +411,7 @@ def savePlans(userId, tripId):
 
     # 성향에 따른 설명 매핑
     personality_dict = {
-        "transport1": "관광지들끼리 경도 위도가 가까운 곳으로 알려줘",
+        "transport1": "관광지들끼리 경도 위도가 가까운 곳으로 일정 만들어줘",
         "transport2": "관광지들끼리 경도 위도가 좀 멀어도 괜찮아",
         "schedule1": "여행 스케줄을 즐기면서 천천히 다니고 싶어",
         "schedule2": "여행 스케줄 일정 알차게 돌아다니고 싶어"
@@ -437,7 +437,7 @@ def savePlans(userId, tripId):
     {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 모든 날짜에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 {personality_query} 니까 사용자의 성향에 맞춰서 짜줘. 같은 장소는 여러 일정을 만들지는 말아줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
     시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
     일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description]. 의 json배열로 뽑아줘
-    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 장소가 부족하다고 날짜를 비워놓지는 말아줘 최대한 너가 분배해서 만들어 내가 준 장소를 사용해서
+    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. 여행 첫날부터 마지막날까지 하루에 스케줄이 1개라도 있어야해 근데 한 장소를 여러번 가지 말고 내가 준 데이터가 아닌 장소는 절대 일정에 넣지 마
     """
     response = model.generate_content(query)
 
