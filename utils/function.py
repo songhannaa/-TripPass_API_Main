@@ -178,7 +178,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
 
             result, geo_coordinates = search_places(search_query, userId, tripId)
             isSerp = True
-
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
