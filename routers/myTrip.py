@@ -1,9 +1,10 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
 from sqlalchemy.orm import Session
 from models.models import myTrips, user, crew, tripPlans
-from database import sqldb , OPENAI_API_KEY, WEATHER_API_KEY
+from database import sqldb , OPENAI_API_KEY, WEATHER_API_KEY, GEMINI_API_KEY
 from utils.ImageGeneration import imageGeneration
 from utils.GetWeather import getWeather
+from utils.openaiMemo import openaiMemo
 import base64
 import uuid
 
@@ -57,11 +58,13 @@ async def insertMyTripsTable(
     city: str = Form(...),
     startDate: str = Form(...),
     endDate: str = Form(...),
-    memo: str = Form(None),
     session: Session = Depends(sqldb.sessionmaker)
 ):
     image_data = imageGeneration(contry, city, OPENAI_API_KEY)
     image_data = base64.b64decode(image_data)
+
+    ai_memo = openaiMemo(contry, city, GEMINI_API_KEY)
+
     
     try:
         tripId = str(uuid.uuid4())
@@ -73,7 +76,7 @@ async def insertMyTripsTable(
             city=city, 
             startDate=startDate, 
             endDate=endDate, 
-            memo=memo, 
+            memo=ai_memo, 
             banner=image_data
         )
         

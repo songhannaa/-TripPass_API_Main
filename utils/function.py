@@ -4,14 +4,12 @@ import openai
 from serpapi import GoogleSearch
 from deep_translator import GoogleTranslator
 from sqlalchemy.ext.declarative import declarative_base
-from pymongo import MongoClient
 import re
 import uuid
 from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, Column, String, INT, FLOAT, LargeBinary, JSON
 import google.generativeai as genai
-from database import sqldb, OPENAI_API_KEY, DB_URL, mongodb_url, GEMINI_API_KEY, SERP_API_KEY,db
+from database import sqldb, OPENAI_API_KEY, GEMINI_API_KEY, SERP_API_KEY,db
 from models.models import myTrips, tripPlans, user
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
@@ -19,6 +17,7 @@ from langchain.embeddings import OpenAIEmbeddings
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import Optional
 import datetime
+from utils.openaiMemo import openaiPlanMemo
 
 # ConversationBufferMemory 초기화
 if 'memory' not in globals():
@@ -42,24 +41,21 @@ def message_to_dict(msg: BaseMessage):
         raise ValueError(f"Unknown message type: {type(msg)}")
 
 def call_openai_function(query: str, userId: str, tripId: str):
-
     isSerp = False
     geo_coordinates = []
+    function_name = None
 
     memory.save_context({"input": query}, {"output": ""})
-    print(memory)
-    # 메시지를 적절한 형식으로 변환
+    print(memory.chat_memory)
+    
     messages = [
         {"role": "system", "content": "You are a helpful assistant that helps users plan their travel plans."},
     ] + [message_to_dict(msg) for msg in memory.chat_memory.messages] + [
         {"role": "user", "content": query}
     ]
     response = openai.ChatCompletion.create(
-
         model="gpt-4o",
-
         messages=messages,
-
         functions=[
             {
                 "name": "search_places",
@@ -119,7 +115,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "사용자가 여행 일정을 만들어줘 혹은 이정도면 충분해 이제 저장할래 이런 말을 했을 때에 실행"
+                            "description": "사용자가 여행 계획 짜줘, 여행 일정 만들어줘, 최종 일정 만들어줘, 그걸로 일정 짜줘 등 여행 관련 일정을 만들어달라는 요청하는 모든 말을 했을 때 실행"
                         }
                     },
                     "required": ["query"]
@@ -131,7 +127,9 @@ def call_openai_function(query: str, userId: str, tripId: str):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "userId": {"type": "string", "description": "with the given details"},
+
+                        "userId": {"type": "string", "description": "with the given details."},
+
                         "tripId": {"type": "string", "description": "with the given details."},
                         "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
@@ -172,9 +170,10 @@ def call_openai_function(query: str, userId: str, tripId: str):
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
 
+        
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
- 
+
         if function_name == "search_places":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -229,7 +228,10 @@ def call_openai_function(query: str, userId: str, tripId: str):
     # 대화 메모리에 응답 추가
     memory.save_context({"input": query}, {"output": result})
 
-    return {"result" : result, "geo_coordinates": geo_coordinates, "isSerp": isSerp}
+    return {"result" : result, 
+            "geo_coordinates": geo_coordinates, 
+            "isSerp": isSerp, 
+            "function_name": function_name}
 
 
 def search_places(query: str, userId, tripId):
@@ -296,8 +298,8 @@ def search_places(query: str, userId, tripId):
             "date": None,
             "time": None
         }
-        
         parsed_results.append(place_data)
+
     # Gemini API를 사용하여 정렬
     genai.configure(api_key=GEMINI_API_KEY)
     prompt = (personality_query + "\n"
@@ -393,15 +395,34 @@ def savePlace(query, userId, tripId):
         saved_titles = [place["title"] for place in selected_places]
         
         # 장소 제목을 포함한 응답 메시지 생성
-        response_message = f"네, 알겠습니다! {', '.join(saved_titles)}이 저장되었습니다🥳"
+        response_message = f"네, 알겠습니다! {', '.join(saved_titles)}이 저장되었습니다🥳\n\n저장하신 목적지로 최종적인 여행 계획을 원하시면 '여행 일정 만들어줘'라고 말씀해 주세요!"
 
         return response_message
 
     except Exception as e:
-        return json.dumps({"result_code": 500, "message": str(e)})
+        return "잠시 오류가 있었어요😭 다시 한번 말해주세요!"
 
 def savePlans(userId, tripId):
     session = sqldb.sessionmaker()
+    # 사용자 성향 데이터 가져오기
+    user_data = session.query(user).filter(user.userId == userId).first().personality
+    personality = json.loads(user_data)
+    
+    transport_preference = personality.get("transport", "")
+    schedule_preference = personality.get("schedule", "")
+
+    # 성향에 따른 설명 매핑
+    personality_dict = {
+        "transport1": "관광지들끼리 경도 위도가 가까운 곳으로 알려줘",
+        "transport2": "관광지들끼리 경도 위도가 좀 멀어도 괜찮아",
+        "schedule1": "여행 스케줄을 즐기면서 천천히 다니고 싶어",
+        "schedule2": "여행 스케줄 일정 알차게 돌아다니고 싶어"
+    }
+
+    # 사용자의 성향에 따른 query 구성
+    personality_query = f"사용자의 성향은 {personality_dict.get(transport_preference, '')}, {personality_dict.get(schedule_preference, '')}"
+    print(personality_query)
+
     mytrip = session.query(myTrips).filter(myTrips.tripId == tripId).first()
     startDate = mytrip.startDate
     endDate = mytrip.endDate
@@ -409,16 +430,16 @@ def savePlans(userId, tripId):
     save_place_collection = db['SavePlace']
     document = save_place_collection.find_one({"userId": userId, "tripId": tripId})
     if not document:
-        print("SavePlace에서 일치하는 문서를 찾을 수 없습니다.")
-        return []
+        response = "아직 저장하신 장소들이 없어요🤔\n제가 추천해드리는 장소를 저장하시거나 가고 싶은 장소를 직접 입력해보세요!"
+        return response
     place_data = document['placeData']
     place_data_str = json.dumps(place_data, ensure_ascii=False)
     model = genai.GenerativeModel('gemini-1.5-flash')
     query = f"""
-    {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 각 날에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 경도와 위도가 가까운 장소들을 하루 일정에 적당히 넣어줘, 하루에 너무 많은 장소를 넣지는 말아줘 적당히 배분해 같은 장소는 일정을 여러번 넣지 않게 해줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
-    시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 만약에 데이터가 부족해서 전체 일정을 다 채우지 못한다 해도 괜찮아 그럼 그냥 아예 리턴을 하지마
+    {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 모든 날짜에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 {personality_query} 니까 사용자의 성향에 맞춰서 짜줘. 같은 장소는 여러 일정을 만들지는 말아줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
+    시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
     일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description]. 의 json배열로 뽑아줘
-    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘
+    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 장소가 부족하다고 날짜를 비워놓지는 말아줘 최대한 너가 분배해서 만들어 내가 준 장소를 사용해서
     """
     response = model.generate_content(query)
 
@@ -442,7 +463,15 @@ def savePlans(userId, tripId):
             description=data['description']
         )
         session.add(new_trip)
+    
+    session.commit()
 
+    # 저장한 계획들로 ai가 계획 별 메모 만들어주
+    places = [data['place'] for data in datas]
+    ai_memo = openaiPlanMemo(places, GEMINI_API_KEY)
+
+    mytrip = session.query(myTrips).filter(myTrips.tripId == tripId).first()
+    mytrip.memo = ai_memo
     session.commit()
 
     save_place_collection.delete_one({"userId": userId, "tripId": tripId})
@@ -451,7 +480,7 @@ def savePlans(userId, tripId):
     query = f"""
     {cleaned_string}이걸 상세하게 설명해서 답변해줘 챗봇이 일정을 만들어준 것처럼 예를 들어 바르셀로나 여행 일정을 완성했어요! 1일차 - 이런식으로
     """
-    response = model.generate_content(query).text
+    response = model.generate_content(query).text.replace('*', '')
 
     return response
 
@@ -596,6 +625,10 @@ def search_place_details(query: str, userId, tripId):
     
     translator = GoogleTranslator(source='en', target='ko')
     result = data.get('place_results', {})
+    
+    # place_results가 비어 있을 경우 처리
+    if not result:
+        return "입력하신 장소를 찾을 수 없습니다😱\n정확한 장소명으로 다시 입력해주세요!", []
     
     serp_collection = db['SerpData']
     
