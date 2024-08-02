@@ -127,9 +127,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
                 "parameters": {
                     "type": "object",
                     "properties": {
-
                         "userId": {"type": "string", "description": "with the given details."},
-
                         "tripId": {"type": "string", "description": "with the given details."},
                         "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
                         "title": {"type": "string", "description": "Title of the tripPlans"},
