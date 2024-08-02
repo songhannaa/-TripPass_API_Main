@@ -8,7 +8,6 @@ import json
 from database import sqldb, db
 from utils.function import *
 
-
 router = APIRouter()
 
 # mongodb collection
@@ -203,6 +202,8 @@ async def clear_memory_endpoint():
     try:
         memory.clear()
         return {"result_code": 200, "response": "Memory has been cleared."}
+    except Exception as e:
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
 
     except Exception as e:
         return {"result_code": 400, "response": f"Error: {str(e)}"}

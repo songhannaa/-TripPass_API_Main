@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
 import google.generativeai as genai
-from database import sqldb, OPENAI_API_KEY, GEMINI_API_KEY, SERP_API_KEY,db
+from database import sqldb, OPENAI_API_KEY, GEMINI_API_KEY, SERP_API_KEY, db
 from models.models import myTrips, tripPlans, user
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
@@ -25,12 +25,12 @@ if 'memory' not in globals():
 
 pending_updates = {}
 
+# OpenAI Embedding
 def get_embedding(text):
     response = openai.Embedding.create(input=text, model="text-embedding-ada-002")
     return response['data'][0]['embedding']
 
 def message_to_dict(msg: BaseMessage):
-
     if isinstance(msg, HumanMessage):
         return {"role": "user", "content": msg.content}
     elif isinstance(msg, AIMessage):
@@ -44,6 +44,17 @@ def call_openai_function(query: str, userId: str, tripId: str):
     isSerp = False
     geo_coordinates = []
     function_name = None
+
+    if query.strip().lower() == "확인":
+        result = update_trip_plan_confirmed(userId)
+        memory.save_context({"input": query}, {"output": result})
+        return {"result": result, "geo_coordinates": geo_coordinates, "isSerp": isSerp, "function_name": "update_trip_plan_confirmed"}
+
+    if userId in pending_updates and query.strip().lower() != "확인":
+        pending_updates.pop(userId)
+        result = "일정 수정을 취소합니다!"
+        memory.save_context({"input": query}, {"output": result})
+        return {"result": result, "geo_coordinates": geo_coordinates, "isSerp": isSerp, "function_name": "cancel_update"}
 
     memory.save_context({"input": query}, {"output": ""})
     print(memory.chat_memory)
@@ -123,19 +134,24 @@ def call_openai_function(query: str, userId: str, tripId: str):
             },
             {
                 "name": "update_trip_plan",
-                "description": "Update a trip plan with the given details, 사용자가 일정을 수정하고 싶다는 말을 하면 이걸로 분류해줘",
+                "description": "Update a trip plan with the given details",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "userId": {"type": "string", "description": "with the given details."},
-                        "tripId": {"type": "string", "description": "with the given details."},
-                        "date": {"type": "string", "description": "Date of the tripPlans you have to change this type. YYYY-MM-DD"},
-                        "title": {"type": "string", "description": "Title of the tripPlans"},
-                        "newTitle": {"type": "string", "description": "New title for the trip plan"},
-                        "newDate": {"type": "string", "description": "New date for the trip plan"},
-                        "newTime": {"type": "string", "description": "New time for the trip plan"}
+                        "query": {
+                            "type": "string",
+                            "description": "사용자가 일정을 수정하고 싶다는 내용을 담은 문자열"
+                        },
+                        "userId": {
+                            "type": "string",
+                            "description": "The user ID for the search context"
+                        },
+                        "tripId": {
+                            "type": "string",
+                            "description": "The trip ID for the search context"
+                        }
                     },
-                    "required": ["userId", "tripId", "date", "title", "newTime"]
+                    "required": ["query", "userId", "tripId"]
                 }
             },
             {
@@ -167,7 +183,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
     try:
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
-
         
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
@@ -178,7 +193,6 @@ def call_openai_function(query: str, userId: str, tripId: str):
 
             result, geo_coordinates = search_places(search_query, userId, tripId)
             isSerp = True
-
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
@@ -195,29 +209,7 @@ def call_openai_function(query: str, userId: str, tripId: str):
             result = savePlans(userId, tripId)
         elif function_name == "update_trip_plan":
             args = json.loads(function_call["arguments"])
-            if query.strip() == "확인":
-                # print(update_trip_plan_confirmed(userId))
-                result = update_trip_plan_confirmed(userId)
-            else:
-                original_plan, confirmation_message = get_plan_details(userId, tripId, args["date"], args["title"])
-                print(confirmation_message)
-                
-                if original_plan:
-                    pending_updates[userId] = {
-                        "tripId": tripId,
-                        "date": args["date"],
-                        "title": args["title"],
-                        "newTitle": args.get("newTitle", args["title"]),
-                        "newDate": args.get("newDate", args["date"]),
-                        "newTime": args["newTime"]
-                    }
-                    print(pending_updates)
-                    result = confirmation_message
-                else:
-                    if original_plan is None:
-                        result = confirmation_message
-                    else:
-                        result = "일정을 찾을 수 없습니다.(if문 확인용)"
+            result = handle_update_trip_plan(args["query"], userId, tripId)
         else:
             result = response.choices[0].message["content"]
     except KeyError:
@@ -226,11 +218,10 @@ def call_openai_function(query: str, userId: str, tripId: str):
     # 대화 메모리에 응답 추가
     memory.save_context({"input": query}, {"output": result})
 
-    return {"result" : result, 
+    return {"result": result, 
             "geo_coordinates": geo_coordinates, 
             "isSerp": isSerp, 
             "function_name": function_name}
-
 
 def search_places(query: str, userId, tripId):
     # Google Search API를 사용하여 장소 검색
@@ -348,9 +339,7 @@ def search_places(query: str, userId, tripId):
 
 def just_chat(query: str):
     response = openai.ChatCompletion.create(
-
         model="gpt-4o",
-
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": query}
@@ -482,55 +471,86 @@ def savePlans(userId, tripId):
 
     return response
 
-# 지영
-def get_plan_details(userId: str, tripId: str, date: str, title: str):
+def handle_update_trip_plan(query, userId, tripId):
     session = sqldb.sessionmaker()
-    try:
-        # 디버그용 출력
-        print(f"Searching for plan with userId={userId}, tripId={tripId}, date={date}, title={title}")
+    plans = session.query(tripPlans).filter_by(userId=userId, tripId=tripId).all()
+    
+    plan_texts = [f"{plan.title} {plan.date} {plan.time} {plan.place} {plan.address} {plan.description}" for plan in plans]
+    plan_embeddings = [get_embedding(text) for text in plan_texts]
+    
+    query_embedding = get_embedding(query)
+    similarities = [cosine_similarity([query_embedding], [embedding])[0][0] for embedding in plan_embeddings]
+    
+    most_similar_index = similarities.index(max(similarities))
+    most_similar_plan = plans[most_similar_index]
+    
+    extracted_info = extract_info_from_query(query)
+    
+    new_title = extracted_info.get('title', most_similar_plan.title)
+    new_date = extracted_info.get('date', most_similar_plan.date)
+    new_time = extracted_info.get('time', most_similar_plan.time)
+    
+    confirmation_message = (
+        f"다음 일정의 정보를 수정하려고 합니다:\n\n"
+        f"[현재 일정]\n"
+        f"일정명: {most_similar_plan.title}\n"
+        f"날짜: {most_similar_plan.date}\n"
+        f"시간: {most_similar_plan.time}\n"
+        f"장소: {most_similar_plan.place}\n"
+        f"주소: {most_similar_plan.address}\n\n"
+        f"[변경될 일정]\n"
+    )
+    
+    if new_title != most_similar_plan.title:
+        confirmation_message += f"새로운 일정명: {new_title}\n"
+    if new_date != most_similar_plan.date:
+        confirmation_message += f"새로운 날짜: {new_date}\n"
+    if new_time != most_similar_plan.time:
+        confirmation_message += f"새로운 시간: {new_time}\n"
+    
+    confirmation_message += "\n이대로 수정하시겠습니까? '확인'을 입력해주세요."
+    
+    pending_updates[userId] = {
+        "tripId": tripId,
+        "date": most_similar_plan.date,
+        "title": most_similar_plan.title,
+        "newTitle": new_title,
+        "newDate": new_date,
+        "newTime": new_time
+    }
+    
+    return confirmation_message
 
-        # 실제 쿼리를 직접 확인해봅니다.
-        plan = session.query(tripPlans).filter_by(userId=userId, tripId=tripId, date=date, title=title).first()
-        print(f"Query result: {plan.crewId}")
+def extract_info_from_query(query: str):
+    date_pattern = r'\d{4}-\d{2}-\d{2}|\d{2}년\s?\d{1,2}월\s?\d{1,2}일'
+    time_pattern = r'\d{1,2}:\d{2}|\d{1,2}시\s?\d{2}분'
 
-        if plan:
-            if plan.crewId:
-                return None, "크루가 존재합니다! 일정 변경이 불가능 합니다!(get_plan_detail)"
-                
-            original_plan = {
-                "title": plan.title,
-                "date": plan.date,
-                "time": plan.time,
-                "place": plan.place,
-                "address": plan.address,
-                "latitude": plan.latitude,
-                "longitude": plan.longitude,
-                "description": plan.description
-            }
+    date_match = re.search(date_pattern, query)
+    time_match = re.search(time_pattern, query)
 
-            # 임베딩 생성
-            plan_text = f"{plan.title} {plan.date} {plan.time} {plan.place} {plan.address} {plan.description}"
-            plan_embedding = get_embedding(plan_text)
-            print(f"Plan embedding: {plan_embedding}")
+    extracted_info = {}
 
-            confirmation_message = (
-                f"해당 일정을 다음과 같이 수정하시겠습니까?\n\n"
-                f"[현재 일정]\n"
-                f"일정명: {original_plan['title']}\n"
-                f"날짜: {original_plan['date']}\n"
-                f"시간: {original_plan['time']}\n"
-                f"장소: {original_plan['place']}\n"
-                f"주소: {original_plan['address']}\n\n"
-                f"수정하려면 '확인'을 입력해주세요."
-            )
+    if date_match:
+        date_str = date_match.group()
+        if "년" in date_str:
+            date_str = date_str.replace('년', '-').replace('월', '-').replace('일', '').replace(' ', '')
+            if len(date_str.split('-')[0]) == 2:
+                date_str = '20' + date_str  # assuming all dates are in 21st century
+        extracted_info['date'] = date_str
 
-            return original_plan, confirmation_message, plan_embedding
-        else:
-            return None, "일정을 찾을 수 없습니다.(get_plan_detail)"
-    except Exception as e:
-        return None, f"An error occurred: {str(e)}"
-    finally:
-        session.close()
+    if time_match:
+        time_str = time_match.group()
+        if "시" in time_str:
+            time_str = time_str.replace('시', ':').replace('분', '').replace(' ', '')
+            if len(time_str) == 4:
+                time_str = '0' + time_str  # ensuring HH:mm format
+        extracted_info['time'] = time_str
+
+    title = query.split("일정")[0].strip()
+    if title:
+        extracted_info['title'] = title
+
+    return extracted_info
 
 def update_trip_plan_confirmed(userId: str):
     if userId not in pending_updates:
@@ -558,7 +578,7 @@ def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTitle: 
 
         if plan:
             if plan.crewId:
-                return "크루가 존재합니다! 일정 변경이 불가능 합니다!(update)"
+                return "크루가 존재합니다! 일정 변경이 불가능 합니다!"
             
             original_plan = {
                 "title": plan.title,
