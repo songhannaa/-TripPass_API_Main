@@ -8,7 +8,6 @@ import json
 from database import sqldb, db
 from utils.function import *
 
-
 router = APIRouter()
 
 # mongodb collection
@@ -197,14 +196,22 @@ async def call_openai_function_endpoint(request: QuestionRequest):
         return {"result_code": 422, "response": f"Validation error: {str(e)}"}
     except Exception as e:
         return {"result_code": 400, "response": f"Error: {str(e)}"}
+
 @router.post(path='/clearMemory', description="메모리 초기화")
 async def clear_memory_endpoint():
     try:
         memory.clear()
         return {"result_code": 200, "response": "Memory has been cleared."}
+    except Exception as e:
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
+
+    except Exception as e:
+        return {"result_code": 400, "response": f"Error: {str(e)}"}
+
 
 #savePlace mongoDB data delete 
-@router.delete("/deletePlaceData/{tripId}/{title}", description="특정 placeData 삭제")
+@router.delete(path ="/deletePlaceData/{tripId}/{title}", description="특정 placeData 삭제")
+
 async def delete_place_data(tripId: str, title: str):
     try:
         # tripId와 일치하는 문서에서 특정 title의 placeData 항목 삭제
@@ -219,7 +226,6 @@ async def delete_place_data(tripId: str, title: str):
             response_message = "No matching place data found"
 
         return {"result_code": 200, "response": response_message}
-
 
     except Exception as e:
         return {"result_code": 400, "response": f"Error: {str(e)}"}
