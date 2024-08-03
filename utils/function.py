@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
 import google.generativeai as genai
-from database import sqldb, OPENAI_API_KEY, GEMINI_API_KEY, SERP_API_KEY, db
+from database import sqldb, OPENAI_API_KEY, GEMINI_API_KEY, SERP_API_KEY,db
 from models.models import myTrips, tripPlans, user
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, AIMessage, HumanMessage, SystemMessage
@@ -25,12 +25,12 @@ if 'memory' not in globals():
 
 pending_updates = {}
 
-# OpenAI Embedding
 def get_embedding(text):
     response = openai.Embedding.create(input=text, model="text-embedding-ada-002")
     return response['data'][0]['embedding']
 
 def message_to_dict(msg: BaseMessage):
+
     if isinstance(msg, HumanMessage):
         return {"role": "user", "content": msg.content}
     elif isinstance(msg, AIMessage):
@@ -40,7 +40,7 @@ def message_to_dict(msg: BaseMessage):
     else:
         raise ValueError(f"Unknown message type: {type(msg)}")
 
-def call_openai_function(query: str, userId: str, tripId: str, latitude: Optional[float], longitude: Optional[float], personality: Optional[dict]):
+def call_openai_function(query: str, userId: str, tripId: str, latitude: Optional[float] = None, longitude: Optional[float] = None, personality: Optional[str] = None):
     isSerp = False
     geo_coordinates = []
     function_name = None
@@ -52,7 +52,7 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
 
     if userId in pending_updates and query.strip().lower() != "확인":
         pending_updates.pop(userId)
-        result = "일정 수정을 취소합니다!"
+        result = "일정 수정을 취소합니다! 수정을 원하시면 다시 수정사항을 말씀해주세요!"
         memory.save_context({"input": query}, {"output": result})
         return {"result": result, "geo_coordinates": geo_coordinates, "isSerp": isSerp, "function_name": "cancel_update"}
 
@@ -64,8 +64,6 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
     ] + [message_to_dict(msg) for msg in memory.chat_memory.messages] + [
         {"role": "user", "content": query}
     ]
-    
-    logging.debug(f"Messages: {messages}")
     
     response = openai.ChatCompletion.create(
         model="gpt-4o",
@@ -80,25 +78,9 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
                         "query": {
                             "type": "string",
                             "description": "The search query for finding places. Include keywords like 'find', 'popular', 'recommend', 'cafes', 'restaurants', etc. If the query isn't in English, translate it to English."
-                        },
-                        "userId": {
-                            "type": "string",
-                            "description": "The user ID for the search context"
-                        },
-                        "tripId": {
-                            "type": "string",
-                            "description": "The trip ID for the search context"
-                        },
-                        "latitude": {
-                            "type": "number",
-                            "description": "The latitude of the location for the search context"
-                        },
-                        "longitude": {
-                            "type": "number",
-                            "description": "The longitude of the location for the search context"
                         }
                     },
-                    "required": ["query", "userId", "tripId", "latitude", "longitude"]
+                    "required": ["query"]
                 }
             },
             {
@@ -174,25 +156,9 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
                         "query": {
                             "type": "string",
                             "description": "The name of the place to get details for. If the query isn't english, translate it in english."
-                        },
-                        "userId": {
-                            "type": "string",
-                            "description": "The user ID for the search context"
-                        },
-                        "tripId": {
-                            "type": "string",
-                            "description": "The trip ID for the search context"
-                        },
-                        "latitude": {
-                            "type": "number",
-                            "description": "The latitude of the location for the search context"
-                        },
-                        "longitude": {
-                            "type": "number",
-                            "description": "The longitude of the location for the search context"
                         }
                     },
-                    "required": ["query", "userId", "tripId", "latitude", "longitude"]
+                    "required": ["query"]
                 }
             }
         ],
@@ -202,26 +168,20 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
     try:
         function_call = response.choices[0].message["function_call"]
         function_name = function_call["name"]
-        
+
         # 호출된 함수 이름을 출력
         print(f"Calling function: {function_name}")
 
         if function_name == "search_places":
-            print("search_places 함수를 호출합니다.")
             args = json.loads(function_call["arguments"])
-            print(args)
             search_query = args["query"]
-            latitude = args["latitude"]
-            longitude = args["longitude"]
-            personality = args["personality"]
 
             result, geo_coordinates = search_places(search_query, userId, tripId, latitude, longitude, personality)
             isSerp = True
+
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
-            latitude = args["latitude"]
-            longitude = args["longitude"]
             
             result, geo_coordinates = search_place_details(search_query, userId, tripId, latitude, longitude)
             isSerp = True
@@ -245,25 +205,23 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
     # 대화 메모리에 응답 추가
     memory.save_context({"input": query}, {"output": result})
 
-    return {"result": result, 
+    return {"result" : result, 
             "geo_coordinates": geo_coordinates, 
             "isSerp": isSerp, 
             "function_name": function_name}
 
+
 def search_places(query: str, userId: str, tripId: str, latitude: float, longitude: float, personality: str):
-    logging.info("search_places 함수 호출됨")  # 함수가 호출되었는지 확인
-    logging.info(f"Received personality: {personality}")  # 받은 personality를 출력
     
     # JSON 문자열을 파이썬 딕셔너리로 변환
     try:
         # JSON 문자열을 파이썬 딕셔너리로 변환
-        personality_dict = json.loads(personality)
-        print(f"Converted personality: {personality_dict}")  # 변환된 딕셔너리 출력
+        personality = json.loads(personality)
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON: {e}")  # JSON 디코딩 에러가 발생한 경우 출력
     except Exception as e:
         print(f"Unexpected error: {e}")  # 예상치 못한 에러가 발생한 경우 출력
-
+    
     # Google Search API를 사용하여 장소 검색
     # ll 파라미터 설정
     ll_param = f"@{latitude},{longitude},14z"
@@ -375,7 +333,9 @@ def search_places(query: str, userId: str, tripId: str, latitude: float, longitu
 
 def just_chat(query: str):
     response = openai.ChatCompletion.create(
+
         model="gpt-4o",
+
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": query}
@@ -436,7 +396,7 @@ def savePlans(userId, tripId):
 
     # 성향에 따른 설명 매핑
     personality_dict = {
-        "transport1": "관광지들끼리 경도 위도가 가까운 곳으로 일정 만들어줘",
+        "transport1": "관광지들끼리 경도 위도가 가까운 곳으로 알려줘",
         "transport2": "관광지들끼리 경도 위도가 좀 멀어도 괜찮아",
         "schedule1": "여행 스케줄을 즐기면서 천천히 다니고 싶어",
         "schedule2": "여행 스케줄 일정 알차게 돌아다니고 싶어"
@@ -444,8 +404,7 @@ def savePlans(userId, tripId):
 
     # 사용자의 성향에 따른 query 구성
     personality_query = f"사용자의 성향은 {personality_dict.get(transport_preference, '')}, {personality_dict.get(schedule_preference, '')}"
-    print(personality_query)
-
+    
     mytrip = session.query(myTrips).filter(myTrips.tripId == tripId).first()
     startDate = mytrip.startDate
     endDate = mytrip.endDate
@@ -462,7 +421,7 @@ def savePlans(userId, tripId):
     {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 모든 날짜에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 {personality_query} 니까 사용자의 성향에 맞춰서 짜줘. 같은 장소는 여러 일정을 만들지는 말아줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
     시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
     일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description]. 의 json배열로 뽑아줘
-    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. 여행 첫날부터 마지막날까지 하루에 스케줄이 1개라도 있어야해 근데 한 장소를 여러번 가지 말고 내가 준 데이터가 아닌 장소는 절대 일정에 넣지 마
+    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 장소가 부족하다고 날짜를 비워놓지는 말아줘 최대한 너가 분배해서 만들어 내가 준 장소를 사용해서
     """
     response = model.generate_content(query)
 
@@ -544,7 +503,7 @@ def handle_update_trip_plan(query, userId, tripId):
     if new_time != most_similar_plan.time:
         confirmation_message += f"새로운 시간: {new_time}\n"
     
-    confirmation_message += "\n이대로 수정하시겠습니까? '확인'을 입력해주세요."
+    confirmation_message += "\n이대로 수정하시겠습니까? '확인'을 입력해주시거나 원치 않으시면 '아니오'라고 입력해주세요!"
     
     pending_updates[userId] = {
         "tripId": tripId,
@@ -559,7 +518,7 @@ def handle_update_trip_plan(query, userId, tripId):
 
 def extract_info_from_query(query: str):
     date_pattern = r'\d{4}-\d{2}-\d{2}|\d{2}년\s?\d{1,2}월\s?\d{1,2}일'
-    time_pattern = r'\d{1,2}:\d{2}|\d{1,2}시\s?\d{2}분'
+    time_pattern = r'\d{1,2}:\d{2}|\d{1,2}시\s?\d{2}분|\d{1,2}시'
 
     date_match = re.search(date_pattern, query)
     time_match = re.search(time_pattern, query)
@@ -578,7 +537,9 @@ def extract_info_from_query(query: str):
         time_str = time_match.group()
         if "시" in time_str:
             time_str = time_str.replace('시', ':').replace('분', '').replace(' ', '')
-            if len(time_str) == 4:
+            if len(time_str) == 2:
+                time_str += "00"
+            if len(time_str) == 3:
                 time_str = '0' + time_str  # ensuring HH:mm format
         extracted_info['time'] = time_str
 

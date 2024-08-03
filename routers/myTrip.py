@@ -64,7 +64,7 @@ async def insertMyTripsTable(
     endDate: str = Form(...),
     session: Session = Depends(sqldb.sessionmaker)
 ):
-    image_data = imageGeneration(contry, city, OPENAI_API_KEY)
+    image_data = imageGeneration(contry, city, title, OPENAI_API_KEY)
     image_data = base64.b64decode(image_data)
 
     ai_memo = openaiMemo(contry, city, GEMINI_API_KEY)
