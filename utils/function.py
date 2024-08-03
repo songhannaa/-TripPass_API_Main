@@ -420,15 +420,18 @@ def savePlans(userId, tripId):
     query = f"""
     {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 모든 날짜에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 {personality_query} 니까 사용자의 성향에 맞춰서 짜줘. 같은 장소는 여러 일정을 만들지는 말아줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
     시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
-    일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description]. 의 json배열로 뽑아줘
-    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 장소가 부족하다고 날짜를 비워놓지는 말아줘 최대한 너가 분배해서 만들어 내가 준 장소를 사용해서
+
+    일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description].의 json배열로 뽑아줘
+    date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 다른 장소는 일정 만들 때 사용하지마 절대 내가 넣은 데이터만 사용해야해
+
     """
     response = model.generate_content(query)
-
+    print(response.text)
     cleaned_string = response.text.strip('```')
     cleaned_string= cleaned_string.replace('json', '').strip()
+    
     datas = json.loads(cleaned_string)
-    print(datas)
+    
 
     for data in datas:
         new_trip = tripPlans(
