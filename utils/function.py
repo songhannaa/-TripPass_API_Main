@@ -52,7 +52,7 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
 
     if userId in pending_updates and query.strip().lower() != "확인":
         pending_updates.pop(userId)
-        result = "일정 수정을 취소합니다!"
+        result = "일정 수정을 취소합니다! 수정을 원하시면 다시 수정사항을 말씀해주세요!"
         memory.save_context({"input": query}, {"output": result})
         return {"result": result, "geo_coordinates": geo_coordinates, "isSerp": isSerp, "function_name": "cancel_update"}
 
@@ -420,6 +420,7 @@ def savePlans(userId, tripId):
     query = f"""
     {startDate}부터 {endDate}까지 다음 장소들만 포함한 상세한 여행 일정을 만들어줘. {place_data_str} 데이터만을 모두 사용해서 모든 날짜에 관광지, 레스토랑, 카페가 균형있게 포함되게 짜주고 되도록 {personality_query} 니까 사용자의 성향에 맞춰서 짜줘. 같은 장소는 여러 일정을 만들지는 말아줘. 되도록 식사시간 그니까 12시, 6시는 식당이나 카페에 방문하게 해주고 
     시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
+
     일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description].의 json배열로 뽑아줘
     date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 다른 장소는 일정 만들 때 사용하지마 절대 내가 넣은 데이터만 사용해야해
 
@@ -505,7 +506,7 @@ def handle_update_trip_plan(query, userId, tripId):
     if new_time != most_similar_plan.time:
         confirmation_message += f"새로운 시간: {new_time}\n"
     
-    confirmation_message += "\n이대로 수정하시겠습니까? '확인'을 입력해주세요."
+    confirmation_message += "\n이대로 수정하시겠습니까? '확인'을 입력해주시거나 원치 않으시면 '아니오'라고 입력해주세요!"
     
     pending_updates[userId] = {
         "tripId": tripId,
@@ -520,7 +521,7 @@ def handle_update_trip_plan(query, userId, tripId):
 
 def extract_info_from_query(query: str):
     date_pattern = r'\d{4}-\d{2}-\d{2}|\d{2}년\s?\d{1,2}월\s?\d{1,2}일'
-    time_pattern = r'\d{1,2}:\d{2}|\d{1,2}시\s?\d{2}분'
+    time_pattern = r'\d{1,2}:\d{2}|\d{1,2}시\s?\d{2}분|\d{1,2}시'
 
     date_match = re.search(date_pattern, query)
     time_match = re.search(time_pattern, query)
@@ -539,7 +540,9 @@ def extract_info_from_query(query: str):
         time_str = time_match.group()
         if "시" in time_str:
             time_str = time_str.replace('시', ':').replace('분', '').replace(' ', '')
-            if len(time_str) == 4:
+            if len(time_str) == 2:
+                time_str += "00"
+            if len(time_str) == 3:
                 time_str = '0' + time_str  # ensuring HH:mm format
         extracted_info['time'] = time_str
 
