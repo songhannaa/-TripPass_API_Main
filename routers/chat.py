@@ -19,6 +19,9 @@ class QuestionRequest(BaseModel):
     tripId: str
     sender: str
     message: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    personality: Optional[str] = None
     isSerp: Optional[bool] = None
     function_name: Optional[str] = None
 
@@ -186,7 +189,12 @@ async def updateTripPlan(
 @router.post(path='/callOpenAIFunction', description="OpenAI 함수 호출")
 async def call_openai_function_endpoint(request: QuestionRequest):
     try:
-        response = call_openai_function(request.message, request.userId, request.tripId)
+        if request.function_name == "search_places":
+            response = call_openai_function(request.message, request.userId, request.tripId, request.latitude, request.longitude, request.personality)
+        elif request.function_name == "search_place_details":
+            response = call_openai_function(request.message, request.userId, request.tripId, request.latitude, request.longitude, None)
+        else:
+            response = call_openai_function(request.message, request.userId, request.tripId, None, None, None)
         return {"result_code": 200, 
                 "response": response["result"], 
                 "geo": response.get("geo_coordinates"), 
@@ -202,9 +210,6 @@ async def clear_memory_endpoint():
     try:
         memory.clear()
         return {"result_code": 200, "response": "Memory has been cleared."}
-    except Exception as e:
-        return {"result_code": 400, "response": f"Error: {str(e)}"}
-
     except Exception as e:
         return {"result_code": 400, "response": f"Error: {str(e)}"}
 
