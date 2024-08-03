@@ -60,3 +60,19 @@ async def insertTripPlansTable(
         return {"result code": 200, "response": planId}
     finally:
         session.close()
+
+@router.delete('/deleteTripPlan', description="mySQL tripPlans Table에서 특정 요청 삭제")
+async def deleteTripPlanTable(
+    planId: str,
+    session: Session = Depends(sqldb.sessionmaker)):
+    try:
+        query = session.query(tripPlans).filter(tripPlans.planId == planId)
+        tripplans_data = query.first()
+        if tripplans_data:
+            session.delete(tripplans_data)
+            session.commit()
+            return {"result code": 200, "response": "Plan deleted successfully"}
+        else:
+            return {"result code": 404, "response": "Plan not found"}
+    finally:
+        session.close()

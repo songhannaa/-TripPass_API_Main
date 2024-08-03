@@ -46,7 +46,7 @@ async def getWelcomeMessage(
         if trip_info and user_info:
             startDate = formatDate(trip_info.startDate)
             endDate = formatDate(trip_info.endDate)
-            welcome_message = f"안녕하세요, {startDate}부터 {endDate}까지 {trip_info.city}로 여행을 가시는 {user_info.nickname}님!\n{user_info.nickname}님만의 여행 플랜 만들기를 시작해볼까요?\n제가 관광지, 식당, 카페 등 다양한 장소를 추천해드릴 수 있어요!\n추천 받길 원하시는 곳의 버튼을 눌러주세요."
+            welcome_message = f"안녕하세요,\n {startDate}부터 {endDate}까지 \n{trip_info.city}(으)로 여행을 가시는 {user_info.nickname}님!\n{user_info.nickname}님만의 여행 플랜을 함께 만들어 볼까요?🤓"
 
             # 환영 메시지를 메모리에 저장
             from utils.function import memory
