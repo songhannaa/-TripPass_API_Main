@@ -40,7 +40,7 @@ class tripPlans(Base):
     date = Column(String(36), nullable=False)
     time = Column(String(36), nullable=False)
     place = Column(String(255), nullable=False)
-    address = Column(String(100), nullable=False)
+    address = Column(String(255), nullable=False)
     latitude = Column(FLOAT, nullable=False)
     longitude = Column(FLOAT, nullable=False)
     description = Column(String(255), nullable=False)
