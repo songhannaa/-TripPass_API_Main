@@ -18,7 +18,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 from typing import Optional
 import datetime
 from utils.openaiMemo import openaiPlanMemo
-import logging
 
 # ConversationBufferMemory 초기화
 if 'memory' not in globals():
@@ -46,13 +45,6 @@ def call_openai_function(query: str, userId: str, tripId: str, latitude: Optiona
     geo_coordinates = []
     function_name = None
     
-    logging.debug(f"Query: {query}")
-    logging.debug(f"User ID: {userId}")
-    logging.debug(f"Trip ID: {tripId}")
-    logging.debug(f"Latitude: {latitude}")
-    logging.debug(f"Longitude: {longitude}")
-    logging.debug(f"Personality: {personality}")
-
     if query.strip().lower() == "확인":
         result = update_trip_plan_confirmed(userId)
         memory.save_context({"input": query}, {"output": result})
