@@ -18,6 +18,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from typing import Optional
 import datetime
 from utils.openaiMemo import openaiPlanMemo
+import logging
 
 # ConversationBufferMemory 초기화
 if 'memory' not in globals():
@@ -40,10 +41,17 @@ def message_to_dict(msg: BaseMessage):
     else:
         raise ValueError(f"Unknown message type: {type(msg)}")
 
-def call_openai_function(query: str, userId: str, tripId: str):
+def call_openai_function(query: str, userId: str, tripId: str, latitude: Optional[float], longitude: Optional[float], personality: Optional[dict]):
     isSerp = False
     geo_coordinates = []
     function_name = None
+    
+    logging.debug(f"Query: {query}")
+    logging.debug(f"User ID: {userId}")
+    logging.debug(f"Trip ID: {tripId}")
+    logging.debug(f"Latitude: {latitude}")
+    logging.debug(f"Longitude: {longitude}")
+    logging.debug(f"Personality: {personality}")
 
     memory.save_context({"input": query}, {"output": ""})
     print(memory.chat_memory)
@@ -53,6 +61,9 @@ def call_openai_function(query: str, userId: str, tripId: str):
     ] + [message_to_dict(msg) for msg in memory.chat_memory.messages] + [
         {"role": "user", "content": query}
     ]
+    
+    logging.debug(f"Messages: {messages}")
+    
     response = openai.ChatCompletion.create(
         model="gpt-4o",
         messages=messages,
@@ -74,9 +85,17 @@ def call_openai_function(query: str, userId: str, tripId: str):
                         "tripId": {
                             "type": "string",
                             "description": "The trip ID for the search context"
+                        },
+                        "latitude": {
+                            "type": "number",
+                            "description": "The latitude of the location for the search context"
+                        },
+                        "longitude": {
+                            "type": "number",
+                            "description": "The longitude of the location for the search context"
                         }
                     },
-                    "required": ["query", "userId", "tripId"]
+                    "required": ["query", "userId", "tripId", "latitude", "longitude"]
                 }
             },
             {
@@ -155,9 +174,17 @@ def call_openai_function(query: str, userId: str, tripId: str):
                         "tripId": {
                             "type": "string",
                             "description": "The trip ID for the search context"
+                        },
+                        "latitude": {
+                            "type": "number",
+                            "description": "The latitude of the location for the search context"
+                        },
+                        "longitude": {
+                            "type": "number",
+                            "description": "The longitude of the location for the search context"
                         }
                     },
-                    "required": ["query", "userId", "tripId"]
+                    "required": ["query", "userId", "tripId", "latitude", "longitude"]
                 }
             }
         ],
@@ -173,16 +200,24 @@ def call_openai_function(query: str, userId: str, tripId: str):
         print(f"Calling function: {function_name}")
 
         if function_name == "search_places":
+            print("search_places 함수를 호출합니다.")
             args = json.loads(function_call["arguments"])
+            print(args)
             search_query = args["query"]
+            latitude = args["latitude"]
+            longitude = args["longitude"]
+            personality = args["personality"]
 
-            result, geo_coordinates = search_places(search_query, userId, tripId)
+            result, geo_coordinates = search_places(search_query, userId, tripId, latitude, longitude, personality)
             isSerp = True
 
         elif function_name == "search_place_details":
             args = json.loads(function_call["arguments"])
             search_query = args["query"]
-            result, geo_coordinates = search_place_details(search_query, userId, tripId)
+            latitude = args["latitude"]
+            longitude = args["longitude"]
+            
+            result, geo_coordinates = search_place_details(search_query, userId, tripId, latitude, longitude)
             isSerp = True
         elif function_name == "just_chat":
             args = json.loads(function_call["arguments"])
@@ -232,22 +267,32 @@ def call_openai_function(query: str, userId: str, tripId: str):
             "function_name": function_name}
 
 
-def search_places(query: str, userId, tripId):
+def search_places(query: str, userId: str, tripId: str, latitude: float, longitude: float, personality: str):
+    logging.info("search_places 함수 호출됨")  # 함수가 호출되었는지 확인
+    logging.info(f"Received personality: {personality}")  # 받은 personality를 출력
+    
+    # JSON 문자열을 파이썬 딕셔너리로 변환
+    try:
+        # JSON 문자열을 파이썬 딕셔너리로 변환
+        personality_dict = json.loads(personality)
+        print(f"Converted personality: {personality_dict}")  # 변환된 딕셔너리 출력
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON: {e}")  # JSON 디코딩 에러가 발생한 경우 출력
+    except Exception as e:
+        print(f"Unexpected error: {e}")  # 예상치 못한 에러가 발생한 경우 출력
+    
     # Google Search API를 사용하여 장소 검색
-    print(query)
+    # ll 파라미터 설정
+    ll_param = f"@{latitude},{longitude},14z"
     params = {
         "engine": "google_maps",
         "q": query,
         "hl": "en",
-        "api_key": SERP_API_KEY
+        "api_key": SERP_API_KEY,
+        "ll": ll_param
     }
     search = GoogleSearch(params)
     data = search.get_dict()
-    # 사용자의 성향 데이터를 가져와서 변환
-    session = sqldb.sessionmaker()
-    user_data = session.query(user).filter(user.userId == userId).first().personality
-    session.close()
-    mypersonality = json.loads(user_data)
     
     personality_dict = {
         "money1": "이왕 여행을 간 김에 가격이 비싸고 좋은 곳으로 알려줘",
@@ -263,7 +308,7 @@ def search_places(query: str, userId, tripId):
     }
 
     personality_query = "사용자의 성향: "
-    for key, value in mypersonality.items():
+    for key, value in personality.items():
         personality_query += personality_dict[value] + " "
     
     parsed_results = []
@@ -343,7 +388,6 @@ def search_places(query: str, userId, tripId):
         final_formatted_results.append(formatted_place)
         geo_coordinates.append((place['latitude'], place['longitude']))
     resultFormatted = '\n'.join(final_formatted_results)
-    # 최종 문자열로 결합하여 반환
     return resultFormatted, geo_coordinates
 
 def just_chat(query: str):
@@ -611,12 +655,14 @@ def update_trip_plan(userId: str, tripId: str, date: str, title: str, newTitle: 
         session.close()
 
 # 사용자 입력 버튼용 (특정 장소명에 대한 정보를 serp에서 불러오기)
-def search_place_details(query: str, userId, tripId):
+def search_place_details(query: str, userId: str, tripId: str, latitude: float, longitude: float):
+    ll_param = f"@{latitude},{longitude},14z"
     params = {
         "engine": "google_maps",
         "q": query,
         "hl": "en",
-        "api_key": SERP_API_KEY
+        "api_key": SERP_API_KEY,
+        "ll": ll_param
     }
     search = GoogleSearch(params)
     data = search.get_dict()

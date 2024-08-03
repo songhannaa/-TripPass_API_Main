@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, INT,  FLOAT, LargeBinary, JSON, Text
+from sqlalchemy import Column, String, INT, FLOAT, LargeBinary, JSON, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.mysql import LONGBLOB
 
@@ -24,6 +24,8 @@ class myTrips(Base):
     title = Column(String(60), nullable=False)
     contry = Column(String(36), nullable=False)
     city = Column(String(36), nullable=False)
+    latitude = Column(FLOAT, nullable=False)
+    longitude = Column(FLOAT, nullable=False)
     startDate = Column(String(36), nullable=False)
     endDate = Column(String(36), nullable=False)
     banner = Column(LargeBinary, nullable=True)
