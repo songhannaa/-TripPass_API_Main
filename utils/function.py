@@ -422,6 +422,7 @@ def savePlans(userId, tripId):
     시간은 시작 시간만 HH:MM:SS 형태로 뽑아주고 날짜는 YYYY-MM-DD이렇게 뽑아줘 description 절대 생략하지 말고 다 넣어줘. title 은 장소에서 해야할 일을 알려주면 좋겠다 예를 들어 에펠탑 관광 이런식으로 뽑아줘.
     일정에 들어가야하는 정보는 다음과 같은 포맷으로 만들어줘: title: [title], date: [YYYY-MM-DD], time: [HH:MM:SS], place: [place], address: [address], latitude: [latitude], longitude: [longitude], description: [description].의 json배열로 뽑아줘
     date랑 time이 null이 아니라면 그 시간으로 일정을 짜줘. startDate 부터 endDate까지 스케줄이 있어야해 다른 장소는 일정 만들 때 사용하지마 절대 내가 넣은 데이터만 사용해야해
+
     """
     response = model.generate_content(query)
     print(response.text)
