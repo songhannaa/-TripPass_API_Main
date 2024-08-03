@@ -23,7 +23,6 @@ class QuestionRequest(BaseModel):
     longitude: Optional[float] = None
     personality: Optional[str] = None
     isSerp: Optional[bool] = None
-    function_name: Optional[str] = None
 
 # ObjectId를 문자열로 변환하는 헬퍼 함수
 def convert_objectid_to_str(doc):
@@ -189,12 +188,7 @@ async def updateTripPlan(
 @router.post(path='/callOpenAIFunction', description="OpenAI 함수 호출")
 async def call_openai_function_endpoint(request: QuestionRequest):
     try:
-        if request.function_name == "search_places":
-            response = call_openai_function(request.message, request.userId, request.tripId, request.latitude, request.longitude, request.personality)
-        elif request.function_name == "search_place_details":
-            response = call_openai_function(request.message, request.userId, request.tripId, request.latitude, request.longitude, None)
-        else:
-            response = call_openai_function(request.message, request.userId, request.tripId, None, None, None)
+        response = call_openai_function(request.message, request.userId, request.tripId, request.latitude, request.longitude, request.personality)
         return {"result_code": 200, 
                 "response": response["result"], 
                 "geo": response.get("geo_coordinates"), 
