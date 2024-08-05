@@ -4,7 +4,10 @@ from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
 from pymongo import MongoClient
 
-BASE_DIR = os.path.dirname(os.path.relpath("./"))
+# BASE_DIR = os.path.dirname(os.path.relpath("./"))
+# secret_file = os.path.join(BASE_DIR, 'secret.json')
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 secret_file = os.path.join(BASE_DIR, 'secret.json')
 
 with open(secret_file) as f:
