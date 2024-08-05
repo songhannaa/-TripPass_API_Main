@@ -520,7 +520,7 @@ def handle_update_trip_plan(query, userId, tripId):
     return confirmation_message
 
 def extract_info_from_query(query: str):
-    date_pattern = r'\d{4}-\d{2}-\d{2}|\d{2}년\s?\d{1,2}월\s?\d{1,2}일'
+    date_pattern = r'\d{2}년\s?\d{1,2}월\s?\d{1,2}일'
     time_pattern = r'\d{1,2}:\d{2}|\d{1,2}시\s?\d{2}분|\d{1,2}시'
 
     date_match = re.search(date_pattern, query)
