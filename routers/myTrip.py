@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
 from sqlalchemy.orm import Session
 from models.models import myTrips, user, crew, tripPlans
-from database import sqldb , OPENAI_API_KEY, WEATHER_API_KEY, GEMINI_API_KEY
+from database import sqldb, db, OPENAI_API_KEY, WEATHER_API_KEY, GEMINI_API_KEY
 from utils.ImageGeneration import imageGeneration
 from utils.GetWeather import getWeather
 from utils.openaiMemo import openaiMemo
@@ -9,6 +9,16 @@ import base64
 import uuid
 
 router = APIRouter()
+
+# mongodb collection
+ChatData_collection = db['ChatData']
+SavePlace_collection = db['SavePlace']
+SerpData_collection = db['SerpData']
+
+def convert_objectid_to_str(doc):
+    if '_id' in doc:
+        doc['_id'] = str(doc['_id'])
+    return doc
 
 @router.get('/getMyTrips', description = "mySQL myTrips Table 접근해서 정보 가져오기, tripId는 선택사항")
 async def getMyTripsTable(
@@ -172,6 +182,11 @@ async def delete_trip(
 
         # myTrips 테이블에서 해당 tripId 삭제
         session.query(myTrips).filter(myTrips.tripId == trip_id, myTrips.userId == user_id).delete()
+        
+        # MongoDB에서 관련 문서 삭제
+        ChatData_collection.delete_many({"userId": user_id, "tripId": trip_id})
+        SavePlace_collection.delete_many({"userId": user_id, "tripId": trip_id})
+        SerpData_collection.delete_many({"userId": user_id, "tripId": trip_id})
 
         # 변경사항 커밋
         session.commit()
