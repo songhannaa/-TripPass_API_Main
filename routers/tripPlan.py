@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, APIRouter
 from sqlalchemy.orm import Session
 from models.models import tripPlans
-from database import sqldb
+from database import sqldb , db
 import base64
 import uuid
 
@@ -57,6 +57,13 @@ async def insertTripPlansTable(
         session.add(new_tripPlan)
         session.commit()
         session.refresh(new_tripPlan)
+        # mongoDB SavePlace 삭제
+        save_place_collection = db['SavePlace']
+        result = save_place_collection.update_one(
+            {"userId": userId, "tripId": tripId},
+            {"$pull": {"placeData": {"title": place}}}
+        )
+
         return {"result code": 200, "response": planId}
     finally:
         session.close()
