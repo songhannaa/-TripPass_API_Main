@@ -2,7 +2,7 @@ from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Req
 from fastapi.responses import RedirectResponse, JSONResponse
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from models.models import user
+from models.models import myTrips, user, crew, tripPlans, joinRequests
 from database import sqldb, KAKAO_CLIENT_ID, KAKAO_REDIRECT_URI
 import base64
 import uuid
@@ -101,14 +101,19 @@ async def deleteUserTable(
     userId: str,
     session: Session = Depends(sqldb.sessionmaker)):
     try:
-        query = session.query(user).filter(user.userId == userId)
-        user_data = query.first()
-        if user_data:
-            session.delete(user_data)
-            session.commit()
-            return {"result code": 200, "response": "User deleted"}
-        else:
-            return {"result code": 404, "response": "User not found"}
+        with session.begin():
+            session.query(joinRequests).filter(joinRequests.userId == userId).delete()
+            session.query(crew).filter(crew.crewLeader == userId).delete()
+            session.query(tripPlans).filter(tripPlans.userId == userId).delete()
+            session.query(myTrips).filter(myTrips.userId == userId).delete()
+            query = session.query(user).filter(user.userId == userId)
+            user_data = query.first()
+            if user_data:
+                session.delete(user_data)
+                session.commit()
+                return {"result code": 200, "response": "User deleted"}
+            else:
+                return {"result code": 404, "response": "User not found"}
     except Exception as e:
         session.rollback()
         return {"result code": 500, "response": str(e)}
