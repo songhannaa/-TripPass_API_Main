@@ -256,6 +256,7 @@ def search_places(query: str, userId: str, tripId: str, latitude: float, longitu
     
     parsed_results = []
     serp_collection = db['SerpData']
+    serp_collection.delete_one({"userId": userId, "tripId": tripId})
     translator = GoogleTranslator(source='en', target='ko')
     
     # 결과 파싱
@@ -653,6 +654,7 @@ def search_place_details(query: str, userId: str, tripId: str, latitude: float, 
         return "입력하신 장소를 찾을 수 없습니다😱\n정확한 장소명으로 다시 입력해주세요!", []
     
     serp_collection = db['SerpData']
+    serp_collection.delete_one({"userId": userId, "tripId": tripId})
     
     title = result.get('title')
     rating = result.get('rating')
