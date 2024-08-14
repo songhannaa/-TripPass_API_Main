@@ -4,11 +4,13 @@ from sqlalchemy import *
 from sqlalchemy.orm import sessionmaker
 from pymongo import MongoClient
 
-# BASE_DIR = os.path.dirname(os.path.relpath("./"))
-# secret_file = os.path.join(BASE_DIR, 'secret.json')
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# secret.json 파일에서 API 키를 읽어옴 (local)
+BASE_DIR = os.path.dirname(os.path.relpath("./"))
 secret_file = os.path.join(BASE_DIR, 'secret.json')
+
+# secret.json 파일에서 API 키를 읽어옴 (docker)
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# secret_file = os.path.join(BASE_DIR, 'secret.json')
 
 with open(secret_file) as f:
     secrets = json.loads(f.read())

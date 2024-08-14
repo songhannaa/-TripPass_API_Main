@@ -8,12 +8,13 @@ RUN apt-get update && apt-get -y upgrade && apt-get -y install git net-tools vim
 WORKDIR /root/TripPassFastAPI
 
 # 애플리케이션 코드 복사
-COPY . .
+COPY requirements.txt ./
+RUN python3.9 -m venv .venv \
+    && ./.venv/bin/pip install --upgrade pip \
+    && ./.venv/bin/pip install -r requirements.txt
 
-# 가상 환경 생성 및 패키지 설치
-RUN python3.9 -m venv .venv
-RUN ./.venv/bin/pip install --upgrade pip
-RUN ./.venv/bin/pip install -r requirements.txt
+# 전체 애플리케이션 코드 복사
+COPY . .
 
 # 애플리케이션이 실행될 포트 설정
 EXPOSE 3000

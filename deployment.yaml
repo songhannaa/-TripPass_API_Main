@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: trippass-fastapi-nodeport
+spec:
+  selector:
+    matchLabels:
+      app: trippass-fastapi-nodeport
+  template:
+    metadata:
+      labels:
+        app: trippass-fastapi-nodeport
+    spec:
+      containers:
+      - name: trippass-fastapi
+        image: dockerId/ImageName
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: secret-volume
+          mountPath: /app/secret.json
+          subPath: secret.json
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+      volumes:
+      - name: secret-volume
+        secret:
+          secretName: my-secret
+      nodeSelector:
+        kubernetes.io/hostname: 인스턴스 이름
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trippass-fastapi-service
+spec:
+  type: NodePort
+  selector:
+    app: trippass-fastapi-nodeport
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+      nodePort: 30900
